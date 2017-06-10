@@ -109,7 +109,7 @@ module GraphQL
     end
 
     def subscription_update?
-      @subscription && @subscription_key
+      @subscription_key && subscription?
     end
 
     # @api private
@@ -235,7 +235,7 @@ module GraphQL
     end
 
     def subscription?
-      @subscription
+      with_prepared_ast { @subscription }
     end
 
     private
