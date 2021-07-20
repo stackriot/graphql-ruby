@@ -1,24 +1,28 @@
 <!DOCTYPE HTML>
 <html lang="en">
   <head>
-    <meta http-equiv="refresh" content="1;url=http://www.rubydoc.info/gems/graphql/1.6.6/GraphQL/StaticValidation/VariablesAreUsedAndDefined" />
+    <meta http-equiv="refresh" content="1;url=/api-doc/1.12.13/GraphQL/StaticValidation/VariablesAreUsedAndDefined" />
   </head>
   <body>
-    <p>Class: GraphQL::StaticValidation::VariablesAreUsedAndDefined &lt; Object
-The problem is
-- Variable usage must be determined at the OperationDefinition
-level
-- You can’t tell how fragments use variables until you visit
+    <p>Module: GraphQL::StaticValidation::VariablesAreUsedAndDefined
+The problem is</p>
+<ul>
+  <li>Variable $usage must be determined at the OperationDefinition
+level</li>
+  <li>You can’t tell how fragments use variables until you visit
 FragmentDefinitions (which may be at the end of the document)
 So, this validator includes some crazy logic to follow fragment
 spreads recursively, while avoiding infinite loops.
-<code class="highlighter-rouge">graphql-js</code> solves this problem by:
-- re-visiting the AST for each validator
-- allowing validators to say <code class="highlighter-rouge">followSpreads: true</code>
-Includes:
-GraphQL::StaticValidation::Message::MessageHelper
+<code class="language-plaintext highlighter-rouge">graphql-js</code> solves this problem by:</li>
+  <li>re-visiting the AST for each validator</li>
+  <li>allowing validators to say <code class="language-plaintext highlighter-rouge">followSpreads: true</code>
+Defined Under Namespace:
+VariableUsage (classes)
 Instance methods:
-create_errors, follow_spreads, validate, variable_hash</p>
+create_errors, follow_spreads, initialize, on_document,
+on_fragment_definition, on_fragment_spread, on_operation_definition,
+on_variable_identifier</li>
+</ul>
 
 
   </body>

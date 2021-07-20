@@ -1,20 +1,20 @@
 <!DOCTYPE HTML>
 <html lang="en">
   <head>
-    <meta http-equiv="refresh" content="1;url=http://www.rubydoc.info/gems/graphql/1.6.6/GraphQL/StaticValidation/Validator" />
+    <meta http-equiv="refresh" content="1;url=/api-doc/1.12.13/GraphQL/StaticValidation/Validator" />
   </head>
   <body>
     <p>Class: GraphQL::StaticValidation::Validator &lt; Object
 Initialized with a GraphQL::Schema, then it can validate based on
 that schema. 
 By default, it’s used by {GraphQL::Query 
-Examples:
-# Validate a query
-validator = GraphQL::StaticValidation::Validator.new(schema: MySchema)
-document = GraphQL.parse(query_string)
-errors = validator.validate(document)
+Examples:</p>
+<h1 id="validate-a-query">Validate a query</h1>
+<p>validator = GraphQL::StaticValidation::Validator.new(schema: MySchema)
+query = GraphQL::Query.new(MySchema, query_string)
+errors = validator.validate(query)[:errors]
 Instance methods:
-initialize, validate</p>
+handle_timeout, initialize, validate</p>
 
 
   </body>

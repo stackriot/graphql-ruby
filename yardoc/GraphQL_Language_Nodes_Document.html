@@ -1,19 +1,26 @@
 <!DOCTYPE HTML>
 <html lang="en">
   <head>
-    <meta http-equiv="refresh" content="1;url=http://www.rubydoc.info/gems/graphql/1.6.6/GraphQL/Language/Nodes/Document" />
+    <meta http-equiv="refresh" content="1;url=/api-doc/1.12.13/GraphQL/Language/Nodes/Document" />
   </head>
   <body>
     <p>Class: GraphQL::Language::Nodes::Document &lt; GraphQL::Language::Nodes…
 This is the AST root for normal queries 
-Examples:
-# Deriving a document by parsing a string
-document = GraphQL.parse(query_string)
-# Creating a string from a document
-document.to_query_string
-# { … }
+Examples:</p>
+<h1 id="deriving-a-document-by-parsing-a-string">Deriving a document by parsing a string</h1>
+<p>document = GraphQL.parse(query_string)</p>
+<h1 id="creating-a-string-from-a-document">Creating a string from a document</h1>
+<p>document.to_query_string</p>
+<h1 id="--">{ … }</h1>
+<h1 id="creating-a-custom-string-from-a-document">Creating a custom string from a document</h1>
+<p>class VariableScrubber &lt; GraphQL::Language::Printer
+def print_argument(arg)
+“#{arg.name}: <HIDDEN>"
+end
+end
+document.to_query_string(printer: VariableSrubber.new)
 Instance methods:
-initialize_node, slice_definition</p>
+slice_definition</HIDDEN></p>
 
 
   </body>

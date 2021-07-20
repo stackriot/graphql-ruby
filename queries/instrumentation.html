@@ -19,9 +19,10 @@
           </a>
           <a href="/getting_started">Get Started</a>
           <a href="/guides">Guides</a>
-          <a href="http://www.rubydoc.info/gems/graphql/1.6.6/">API</a>
+          <a href="/api-doc/1.12.13/">API</a>
           <a href="https://tinyletter.com/graphql-ruby">Newsletter</a>
           <a href="https://github.com/rmosolgo/graphql-ruby">Source Code</a>
+          <a href="https://graphql.pro">Upgrade to Pro</a>
           <input
             class="search-input"
             onkeyup="GraphQLRubySearch.run(this)"
@@ -31,30 +32,31 @@
         </div>
       </div>
       <div class="search-results-container">
-        <div id="search-results"></div>
+        <div id="search-results">
+        </div>
       </div>
     </div>
     <div class="container">
       <p class="breadcrumb">
   <a href="/">GraphQL</a>
   &raquo; <a href="/guides">Guides</a>
-   &raquo; Queries
+   &raquo; <a href="/guides#queries-guides">Queries</a>
   &raquo; Instrumentation
 </p>
+
 
 <h1 class="guide-header">Instrumentation</h1>
 <div class="guide-container">
   <p>You can call hooks <em>before</em> and <em>after</em> each query. Query instrumentation can be attached during schema definition:</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="no">MySchema</span> <span class="o">=</span> <span class="no">GraphQL</span><span class="o">::</span><span class="no">Schema</span><span class="p">.</span><span class="nf">define</span> <span class="k">do</span>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">MySchema</span> <span class="o">&lt;</span> <span class="no">GraphQL</span><span class="o">::</span><span class="no">Schema</span>
   <span class="n">instrument</span><span class="p">(</span><span class="ss">:query</span><span class="p">,</span> <span class="no">QueryTimerInstrumentation</span><span class="p">)</span>
 <span class="k">end</span>
-</code></pre>
-</div>
+</code></pre></div></div>
 
-<p>The instrumenter must implement <code class="highlighter-rouge">#before_query(query)</code> and <code class="highlighter-rouge">#after_query(query)</code>. The return values of these methods are not used. They receive the <a href="http://www.rubydoc.info/gems/graphql/1.6.6/GraphQL/Query" target="_blank" title="API docs for GraphQL::Query"><code>GraphQL::Query</code></a> instance.</p>
+<p>The instrumenter must implement <code class="language-plaintext highlighter-rouge">#before_query(query)</code> and <code class="language-plaintext highlighter-rouge">#after_query(query)</code>. The return values of these methods are not used. They receive the <a href="/api-doc/1.12.13/GraphQL/Query" target="_blank" title="API docs for GraphQL::Query"><code>GraphQL::Query</code></a> instance.</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="k">module</span> <span class="nn">QueryTimerInstrumentation</span>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">module</span> <span class="nn">QueryTimerInstrumentation</span>
   <span class="kp">module_function</span>
 
   <span class="c1"># Log the time of the query</span>
@@ -66,8 +68,7 @@
     <span class="no">Rails</span><span class="p">.</span><span class="nf">logger</span><span class="p">.</span><span class="nf">info</span><span class="p">(</span><span class="s2">"Query end: </span><span class="si">#{</span><span class="no">Time</span><span class="p">.</span><span class="nf">now</span><span class="p">.</span><span class="nf">to_i</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
   <span class="k">end</span>
 <span class="k">end</span>
-</code></pre>
-</div>
+</code></pre></div></div>
 
 </div>
 <p class="guide-footer">
@@ -94,6 +95,7 @@
 </script>
 
     </div>
+    <script src="https://cdn.jsdelivr.net/algoliasearch/3/algoliasearchLite.min.js"></script>
     <script src="/js/search.js"></script>
   </body>
 </html>

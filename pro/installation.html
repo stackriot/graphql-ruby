@@ -19,9 +19,10 @@
           </a>
           <a href="/getting_started">Get Started</a>
           <a href="/guides">Guides</a>
-          <a href="http://www.rubydoc.info/gems/graphql/1.6.6/">API</a>
+          <a href="/api-doc/1.12.13/">API</a>
           <a href="https://tinyletter.com/graphql-ruby">Newsletter</a>
           <a href="https://github.com/rmosolgo/graphql-ruby">Source Code</a>
+          <a href="https://graphql.pro">Upgrade to Pro</a>
           <input
             class="search-input"
             onkeyup="GraphQLRubySearch.run(this)"
@@ -31,69 +32,75 @@
         </div>
       </div>
       <div class="search-results-container">
-        <div id="search-results"></div>
+        <div id="search-results">
+        </div>
       </div>
     </div>
     <div class="container">
       <p class="breadcrumb">
   <a href="/">GraphQL</a>
   &raquo; <a href="/guides">Guides</a>
-   &raquo; GraphQL Pro
+   &raquo; <a href="/guides#graphql-pro-guides">GraphQL Pro</a>
   &raquo; Installation
 </p>
 
+
+  <div class="pro-header">
+    <p>
+      <strong>⚡️ Pro Feature ⚡️</strong>
+      <span style="font-style: italic;">
+        This feature is bundled with <a href="https://graphql.pro">GraphQL-Pro</a>.
+      </span>
+    </p>
+  </div>
+
 <h1 class="guide-header">Installation</h1>
 <div class="guide-container">
-  <p><code class="highlighter-rouge">GraphQL::Pro</code> is distributed as a Ruby gem. When you buy <code class="highlighter-rouge">GraphQL::Pro</code>, you’ll receive credentials, which you can register with bundler:</p>
+  <p><code class="language-plaintext highlighter-rouge">GraphQL::Pro</code> is distributed as a Ruby gem. When you buy <code class="language-plaintext highlighter-rouge">GraphQL::Pro</code>, you’ll receive credentials, which you can register with bundler:</p>
 
-<div class="language-sh highlighter-rouge"><pre class="highlight"><code>bundle config gems.graphql.pro <span class="c">#{YOUR_CREDENTIALS}</span>
-</code></pre>
-</div>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bundle config gems.graphql.pro <span class="c">#{YOUR_CREDENTIALS}</span>
+</code></pre></div></div>
 
-<p>Then, you can add <code class="highlighter-rouge">graphql-pro</code> to your Gemfile, which a custom <code class="highlighter-rouge">source</code>:</p>
+<p>Then, you can add <code class="language-plaintext highlighter-rouge">graphql-pro</code> to your Gemfile, which a custom <code class="language-plaintext highlighter-rouge">source</code>:</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="n">source</span> <span class="s2">"https://gems.graphql.pro"</span> <span class="k">do</span>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">source</span> <span class="s2">"https://gems.graphql.pro"</span> <span class="k">do</span>
   <span class="n">gem</span> <span class="s2">"graphql-pro"</span>
 <span class="k">end</span>
-</code></pre>
-</div>
+</code></pre></div></div>
 
 <p>Then, install the gem with Bundler:</p>
 
-<div class="language-sh highlighter-rouge"><pre class="highlight"><code>bundle install
-</code></pre>
-</div>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bundle <span class="nb">install</span>
+</code></pre></div></div>
 
-<p>Then, check out some of <code class="highlighter-rouge">GraphQL::Pro</code>’s features!</p>
+<p>Then, check out some of <code class="language-plaintext highlighter-rouge">GraphQL::Pro</code>’s features!</p>
 
 <h2 id="updates">Updates</h2>
 
-<p>To update <code class="highlighter-rouge">GraphQL::Pro</code>, use Bundler:</p>
+<p>To update <code class="language-plaintext highlighter-rouge">GraphQL::Pro</code>, use Bundler:</p>
 
-<div class="language-sh highlighter-rouge"><pre class="highlight"><code>bundle update graphql-pro
-</code></pre>
-</div>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bundle update graphql-pro
+</code></pre></div></div>
 
 <p>Be sure to check the <a href="https://github.com/rmosolgo/graphql-ruby/blob/master/CHANGELOG-pro.md">changelog</a> between versions!</p>
 
 <h2 id="dependencies">Dependencies</h2>
 
-<p><code class="highlighter-rouge">graphql-pro 1.0.0</code> requires <code class="highlighter-rouge">graphql ~&gt;1.4</code>. The latest version requires <code class="highlighter-rouge">graphql ~&gt;1.6</code>.</p>
+<p><code class="language-plaintext highlighter-rouge">graphql-pro 1.0.0</code> requires <code class="language-plaintext highlighter-rouge">graphql ~&gt;1.4</code>. The latest version requires <code class="language-plaintext highlighter-rouge">graphql =&gt;1.7.6</code>.</p>
 
 <h2 id="verifying-integrity">Verifying Integrity</h2>
 
-<p>You can verify the integrity of <code class="highlighter-rouge">graphql-pro</code> by getting its checksum and comparing it to the <a href="https://github.com/rmosolgo/graphql-ruby/blob/master/guides/pro/checksums">published checksums</a>.</p>
+<p>You can verify the integrity of <code class="language-plaintext highlighter-rouge">graphql-pro</code> by getting its checksum and comparing it to the <a href="https://github.com/rmosolgo/graphql-ruby/blob/master/guides/pro/checksums">published checksums</a>.</p>
 
-<p>Include the <code class="highlighter-rouge">graphql:pro:validate</code> task in your <code class="highlighter-rouge">Rakefile</code>:</p>
+<p>Include the <code class="language-plaintext highlighter-rouge">graphql:pro:validate</code> task in your <code class="language-plaintext highlighter-rouge">Rakefile</code>:</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="c1"># Rakefile</span>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># Rakefile</span>
 <span class="nb">require</span> <span class="s2">"graphql/rake_task/validate"</span>
-</code></pre>
-</div>
+</code></pre></div></div>
 
 <p>Then invoke it with a version:</p>
 
-<div class="highlighter-rouge"><pre class="highlight"><code>$ bundle exec rake graphql:pro:validate[1.0.0]
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ bundle exec rake graphql:pro:validate[1.0.0]
 Validating graphql-pro v1.0.0
   - Checking for graphql-pro credentials...
     ✓ found
@@ -103,13 +110,11 @@ Validating graphql-pro v1.0.0
     ✓ validated from GitHub
     ✓ validated from graphql-ruby.org
 ✔ graphql-pro 1.0.0 validated successfully!
-</code></pre>
-</div>
+</code></pre></div></div>
 
-<p>In case of a failure, please <a href="https://github.com/rmosolgo/graphql-ruby/issues/new?title=GraphQL Pro installation failure" target="_blank">open an issue</a>
-:</p>
+<p>In case of a failure, please <a href="https://github.com/rmosolgo/graphql-ruby/issues/new?title=GraphQL Pro installation failure" target="_blank">open an issue</a>:</p>
 
-<div class="highlighter-rouge"><pre class="highlight"><code>Validating graphql-pro v1.4.800
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Validating graphql-pro v1.4.800
   - Checking for graphql-pro credentials...
     ✓ found
   - Fetching the gem...
@@ -122,8 +127,7 @@ Validating graphql-pro v1.0.0
 
       This download of graphql-pro is invalid, please open an issue:
       https://github.com/rmosolgo/graphql-ruby/issues/new?title=graphql-pro%20digest%20mismatch%20(1.4.800)
-</code></pre>
-</div>
+</code></pre></div></div>
 
 </div>
 <p class="guide-footer">
@@ -150,6 +154,7 @@ Validating graphql-pro v1.0.0
 </script>
 
     </div>
+    <script src="https://cdn.jsdelivr.net/algoliasearch/3/algoliasearchLite.min.js"></script>
     <script src="/js/search.js"></script>
   </body>
 </html>

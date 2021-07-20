@@ -19,9 +19,10 @@
           </a>
           <a href="/getting_started">Get Started</a>
           <a href="/guides">Guides</a>
-          <a href="http://www.rubydoc.info/gems/graphql/1.6.6/">API</a>
+          <a href="/api-doc/1.12.13/">API</a>
           <a href="https://tinyletter.com/graphql-ruby">Newsletter</a>
           <a href="https://github.com/rmosolgo/graphql-ruby">Source Code</a>
+          <a href="https://graphql.pro">Upgrade to Pro</a>
           <input
             class="search-input"
             onkeyup="GraphQLRubySearch.run(this)"
@@ -31,45 +32,54 @@
         </div>
       </div>
       <div class="search-results-container">
-        <div id="search-results"></div>
+        <div id="search-results">
+        </div>
       </div>
     </div>
     <div class="container">
       <p class="breadcrumb">
   <a href="/">GraphQL</a>
   &raquo; <a href="/guides">Guides</a>
-   &raquo; GraphQL Pro - OperationStore
+   &raquo; <a href="/guides#graphql-pro-operationstore-guides">GraphQL Pro - OperationStore</a>
   &raquo; Overview
 </p>
 
+
+  <div class="pro-header">
+    <p>
+      <strong>⚡️ Pro Feature ⚡️</strong>
+      <span style="font-style: italic;">
+        This feature is bundled with <a href="https://graphql.pro">GraphQL-Pro</a>.
+      </span>
+    </p>
+  </div>
+
 <h1 class="guide-header">Overview</h1>
 <div class="guide-container">
-  <p><code class="highlighter-rouge">GraphQL::Pro::OperationStore</code> uses <code class="highlighter-rouge">ActiveRecord</code> and <code class="highlighter-rouge">Rack</code> to maintain a normalized, deduplicated database of <em>persisted queries</em> for your GraphQL system.</p>
+  <p><code class="language-plaintext highlighter-rouge">GraphQL::Pro::OperationStore</code> uses <code class="language-plaintext highlighter-rouge">Rack</code> and a storage backend (<a href="/operation_store/active_record_backend">ActiveRecord</a> or <a href="/operation_store/active_record_backend">Redis</a>) to maintain a normalized, deduplicated database of <em>persisted queries</em> for your GraphQL system.</p>
 
 <p>In this guide, you’ll find:</p>
 
 <ul>
   <li><a href="#what-are-persisted-queries">Description of persisted queries</a></li>
   <li><a href="#why-persisted-queries">The rationale</a> behind them</li>
-  <li><a href="#how-it-works">How <code class="highlighter-rouge">OperationStore</code> works</a>, in brief</li>
+  <li><a href="#how-it-works">How <code class="language-plaintext highlighter-rouge">OperationStore</code> works</a>, in brief</li>
 </ul>
 
 <p>In other guides, you can read more about:</p>
 
 <ul>
-  <li><a href="/operation_store/getting_started">Getting Started</a>
- installing <code class="highlighter-rouge">OperationStore</code> in your app</li>
-  <li><a href="/operation_store/client_workflow">Workflow</a>
- and usage for client apps</li>
-  <li><a href="/operation_store/authentication">Authentication</a>
- for the sync API</li>
-  <li><a href="/operation_store/server_management">Server Management</a>
- after your system is running</li>
+  <li><a href="/operation_store/getting_started">Getting Started</a> installing <code class="language-plaintext highlighter-rouge">OperationStore</code> in your app</li>
+  <li><a href="/operation_store/client_workflow">Workflow</a> and usage for client apps</li>
+  <li><a href="/operation_store/access_control">Authentication</a> for the sync API</li>
+  <li><a href="/operation_store/server_management">Server Management</a> after your system is running</li>
 </ul>
+
+<p>Also, you can find a <a href="https://github.com/rmosolgo/graphql-pro-operation-store-example">demo app on GitHub</a>.</p>
 
 <h3 id="what-are-persisted-queries">What are Persisted Queries?</h3>
 
-<p><em>Persisted queries</em> are GraphQL queries (<code class="highlighter-rouge">query</code>, <code class="highlighter-rouge">mutation</code>, or <code class="highlighter-rouge">subscription</code>) that are saved on the server and invoked by clients by <em>reference</em>. In this arrangement, clients don’t send GraphQL queries over the network. Instead, clients send:</p>
+<p><em>Persisted queries</em> are GraphQL queries (<code class="language-plaintext highlighter-rouge">query</code>, <code class="language-plaintext highlighter-rouge">mutation</code>, or <code class="language-plaintext highlighter-rouge">subscription</code>) that are saved on the server and invoked by clients by <em>reference</em>. In this arrangement, clients don’t send GraphQL queries over the network. Instead, clients send:</p>
 
 <ul>
   <li><strong>Client name</strong>, to identify the client who is making the request</li>
@@ -81,7 +91,7 @@
 
 <p>Without persisted queries, clients send the whole document:</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="c1"># Before, without persisted queries</span>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># Before, without persisted queries</span>
 <span class="n">query_string</span> <span class="o">=</span> <span class="s2">"query GetUserDetails($userId: ID!) { ... }"</span>
 
 <span class="no">MyGraphQLEndpoint</span><span class="p">.</span><span class="nf">post</span><span class="p">({</span>
@@ -89,19 +99,17 @@
   <span class="ss">operationName: </span><span class="s2">"GetUserDetails"</span><span class="p">,</span>
   <span class="ss">variables: </span><span class="p">{</span> <span class="ss">userId: </span><span class="s2">"100"</span> <span class="p">},</span>
 <span class="p">})</span>
-</code></pre>
-</div>
+</code></pre></div></div>
 
 <p>But with persisted queries, the full document isn’t sent because the server already has a copy of it:</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="c1"># After, with persisted queries:</span>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># After, with persisted queries:</span>
 <span class="no">MyGraphQLEndpoint</span><span class="p">.</span><span class="nf">post</span><span class="p">({</span>
   <span class="ss">operationId: </span><span class="p">{</span> <span class="s2">"relay-app-v1/fc84dbba3623383fdc"</span><span class="p">,</span>
   <span class="c1">#               client name / query alias (eg, @relayHash)</span>
   <span class="ss">variables: </span><span class="p">{</span> <span class="ss">userId: </span><span class="s2">"100"</span> <span class="p">},</span>
 <span class="p">})</span>
-</code></pre>
-</div>
+</code></pre></div></div>
 
 <h3 id="why-persisted-queries">Why Persisted Queries?</h3>
 
@@ -109,19 +117,18 @@
 
 <h4 id="security">Security</h4>
 
-<p>Persisted queries improve security because you can reject arbitrary GraphQL queries, removing an attack vector from your system. The query database serves a whitelist, so you can be sure that no unexpected queries will not hit your system.</p>
+<p>Persisted queries improve security because you can reject arbitrary GraphQL queries, removing an attack vector from your system. The query database serves a whitelist, so you can be sure that no unexpected queries will hit your system.</p>
 
 <p>For example, after all clients have migrated to persisted queries, you can reject arbitrary GraphQL in production:</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="c1"># app/controllers/graphql_controller.rb</span>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># app/controllers/graphql_controller.rb</span>
 <span class="k">if</span> <span class="no">Rails</span><span class="p">.</span><span class="nf">env</span><span class="p">.</span><span class="nf">production?</span> <span class="o">&amp;&amp;</span> <span class="n">params</span><span class="p">[</span><span class="ss">:query</span><span class="p">].</span><span class="nf">present?</span>
   <span class="c1"># Reject arbitrary GraphQL in production:</span>
   <span class="n">render</span> <span class="ss">json: </span><span class="p">{</span> <span class="ss">errors: </span><span class="p">[{</span> <span class="ss">message: </span><span class="s2">"Raw GraphQL is not accepted"</span> <span class="p">}]}</span>
 <span class="k">else</span>
   <span class="c1"># ...</span>
 <span class="k">end</span>
-</code></pre>
-</div>
+</code></pre></div></div>
 
 <h4 id="efficiency">Efficiency</h4>
 
@@ -141,7 +148,7 @@
 
 <h4 id="visibility">Visibility</h4>
 
-<p>Persisted queries improve <em>visibility</em> because you can track GraphQL usage from a single location. <code class="highlighter-rouge">OperationStore</code> maintains an index of type, field and argument usage so that you can analyze your traffic.</p>
+<p>Persisted queries improve <em>visibility</em> because you can track GraphQL usage from a single location. <code class="language-plaintext highlighter-rouge">OperationStore</code> maintains an index of type, field and argument usage so that you can analyze your traffic.</p>
 
 <p><a href="/operation_store/operation_index.png" target="_blank" class="img-link">
   <img src="/operation_store/operation_index.png" title="Index of GraphQL usage with persisted queries" alt="Index of GraphQL usage with persisted queries" />
@@ -149,24 +156,20 @@
 
 <h3 id="how-it-works">How it Works</h3>
 
-<p><code class="highlighter-rouge">OperationStore</code> uses tables in your database to store normalized, deduplicated GraphQL strings. The database is immutable: new operations may be added, but operations are never modified or removed.</p>
+<p><code class="language-plaintext highlighter-rouge">OperationStore</code> uses tables in your database to store normalized, deduplicated GraphQL strings. The database is immutable: new operations may be added, but operations are never modified or removed.</p>
 
-<p>When clients <a href="/operation_store/client_workflow">sync their operations</a>
-, requests are <a href="/operation_store/authentication">authenticated</a>
-, then the incoming GraphQL is validated, normalized, and added to the database if needed. Also, the incoming client name is associated with all operations in the payload.</p>
+<p>When clients <a href="/operation_store/client_workflow">sync their operations</a>, requests are <a href="/operation_store/access_control">authenticated</a>, then the incoming GraphQL is validated, normalized, and added to the database if needed. Also, the incoming client name is associated with all operations in the payload.</p>
 
-<p>Then, at runtime, clients send an <em>operation ID</em> to run a persisted query. It looks like this in <code class="highlighter-rouge">params</code>:</p>
+<p>Then, at runtime, clients send an <em>operation ID</em> to run a persisted query. It looks like this in <code class="language-plaintext highlighter-rouge">params</code>:</p>
 
-<div class="language-ruby highlighter-rouge"><pre class="highlight"><code><span class="n">params</span><span class="p">[</span><span class="ss">:operationId</span><span class="p">]</span> <span class="c1"># =&gt; "relay-app-v1/810c97f6631001..."</span>
-</code></pre>
-</div>
+<div class="language-ruby highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">params</span><span class="p">[</span><span class="ss">:operationId</span><span class="p">]</span> <span class="c1"># =&gt; "relay-app-v1/810c97f6631001..."</span>
+</code></pre></div></div>
 
-<p><code class="highlighter-rouge">OperationStore</code> uses this to fetch the matching operation from the database. From there, the query is evaluated normally.</p>
+<p><code class="language-plaintext highlighter-rouge">OperationStore</code> uses this to fetch the matching operation from the database. From there, the query is evaluated normally.</p>
 
 <h3 id="getting-started">Getting Started</h3>
 
-<p>See the <a href="/operation_store/getting_started">getting started guide</a>
- to add <code class="highlighter-rouge">OperationStore</code> to your app.</p>
+<p>See the <a href="/operation_store/getting_started">getting started guide</a> to add <code class="language-plaintext highlighter-rouge">OperationStore</code> to your app.</p>
 
 </div>
 <p class="guide-footer">
@@ -193,6 +196,7 @@
 </script>
 
     </div>
+    <script src="https://cdn.jsdelivr.net/algoliasearch/3/algoliasearchLite.min.js"></script>
     <script src="/js/search.js"></script>
   </body>
 </html>

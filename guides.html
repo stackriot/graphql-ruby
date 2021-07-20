@@ -19,9 +19,10 @@
           </a>
           <a href="/getting_started">Get Started</a>
           <a href="/guides">Guides</a>
-          <a href="http://www.rubydoc.info/gems/graphql/1.6.6/">API</a>
+          <a href="/api-doc/1.12.13/">API</a>
           <a href="https://tinyletter.com/graphql-ruby">Newsletter</a>
           <a href="https://github.com/rmosolgo/graphql-ruby">Source Code</a>
+          <a href="https://graphql.pro">Upgrade to Pro</a>
           <input
             class="search-input"
             onkeyup="GraphQLRubySearch.run(this)"
@@ -31,7 +32,8 @@
         </div>
       </div>
       <div class="search-results-container">
-        <div id="search-results"></div>
+        <div id="search-results">
+        </div>
       </div>
     </div>
     <div class="container">
@@ -40,560 +42,91 @@
   <ul>
     
       <li>
-        <a href="#Schema">Schema</a>
+        <a href="#schema-guides">Schema</a>
       </li>
     
       <li>
-        <a href="#Queries">Queries</a>
+        <a href="#queries-guides">Queries</a>
       </li>
     
       <li>
-        <a href="#Types">Types</a>
+        <a href="#type-definitions-guides">Type Definitions</a>
       </li>
     
       <li>
-        <a href="#Fields">Fields</a>
+        <a href="#authorization-guides">Authorization</a>
       </li>
     
       <li>
-        <a href="#Relay">Relay</a>
+        <a href="#fields-guides">Fields</a>
       </li>
     
       <li>
-        <a href="#GraphQL Pro">GraphQL Pro</a>
+        <a href="#mutations-guides">Mutations</a>
       </li>
     
       <li>
-        <a href="#GraphQL Pro - OperationStore">GraphQL Pro - OperationStore</a>
+        <a href="#errors-guides">Errors</a>
       </li>
     
       <li>
-        <a href="#Other">Other</a>
+        <a href="#pagination-guides">Pagination</a>
+      </li>
+    
+      <li>
+        <a href="#relay-guides">Relay</a>
+      </li>
+    
+      <li>
+        <a href="#dataloader-guides">Dataloader</a>
+      </li>
+    
+      <li>
+        <a href="#subscriptions-guides">Subscriptions</a>
+      </li>
+    
+      <li>
+        <a href="#graphql-pro-guides">GraphQL Pro</a>
+      </li>
+    
+      <li>
+        <a href="#graphql-pro-operationstore-guides">GraphQL Pro - OperationStore</a>
+      </li>
+    
+      <li>
+        <a href="#graphql-pro-defer-guides">GraphQL Pro - Defer</a>
+      </li>
+    
+      <li>
+        <a href="#javascript-client-guides">JavaScript Client</a>
+      </li>
+    
+      <li>
+        <a href="#language-tools-guides">Language Tools</a>
+      </li>
+    
+      <li>
+        <a href="#testing-guides">Testing</a>
+      </li>
+    
+      <li>
+        <a href="#other-guides">Other</a>
       </li>
     
   </ul>
 </div>
 <div class="guides">
   
+  
+  
+  
+
+  
+  
     <div class="guide-section">
-      <h2 id="Schema">Schema</h2>
+      <h2 id="schema-guides">Schema</h2>
       <ul>
         
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
           
         
           
@@ -633,22 +166,9 @@
           
             <li>
               <p>
-                <a href="/schema/dynamic_schema.html">Dynamic definition</a>
+                <a href="/schema/definition.html">Definition</a>
                 <span class="guide-desc">
-                  You can define your schema dynamically based on other data
-                </span>
-              </p>
-            </li>
-          
-        
-          
-        
-          
-            <li>
-              <p>
-                <a href="/schema/generators.html">Generators</a>
-                <span class="guide-desc">
-                  Use Rails generators to install GraphQL and scaffold new types.
+                  Defining your schema
                 </span>
               </p>
             </li>
@@ -663,25 +183,33 @@
           
         
           
-            <li>
-              <p>
-                <a href="/schema/lazy_execution.html">Lazy Execution</a>
-                <span class="guide-desc">
-                  Resolve functions can return "unfinished" results. GraphQL will defer finishing them until other fields have been resolved.
-                </span>
-              </p>
-            </li>
+        
           
         
           
-            <li>
-              <p>
-                <a href="/schema/limiting_visibility.html">Limiting Visibility</a>
-                <span class="guide-desc">
-                  Flag types and fields so that only some clients can see them.
-                </span>
-              </p>
-            </li>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -702,11 +230,40 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
-                <a href="/schema/type_errors.html">Handing Typecasting Errors</a>
+                <a href="/schema/generators.html">Generators</a>
                 <span class="guide-desc">
-                  Specify how GraphQL should handle errors when runtime objects don't match the expected types
+                  Use Rails generators to install GraphQL and scaffold new types.
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/schema/introspection.html">Introspection</a>
+                <span class="guide-desc">
+                  GraphQL has an introspection system that tells about the schema.
                 </span>
               </p>
             </li>
@@ -737,21 +294,14 @@
           
         
           
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
+            <li>
+              <p>
+                <a href="/schema/lazy_execution.html">Lazy Execution</a>
+                <span class="guide-desc">
+                  Resolve functions can return "unfinished" results that are deferred for batch resolution.
+                </span>
+              </p>
+            </li>
           
         
           
@@ -775,23 +325,70 @@
           
             <li>
               <p>
-                <a href="/schema/extending_the_dsl.html">Extending the DSL</a>
+                <a href="/schema/class_based_api.html">Class-based API Migration</a>
                 <span class="guide-desc">
-                  Customize the DSL for your application
+                  Migrate from legacy .define DSL to Ruby classes.
                 </span>
               </p>
             </li>
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
-                <a href="/schema/testing.html">Testing</a>
+                <a href="/schema/sdl.html">Parsing GraphQL Schema Definition Language into a Ruby Schema</a>
                 <span class="guide-desc">
-                  Techniques for testing your GraphQL system
+                  Defining a schema from a string or .graphql file
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/schema/object_identification.html">Object Identification</a>
+                <span class="guide-desc">
+                  Working with Relay-style global IDs
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -800,602 +397,8 @@
     </div>
   
     <div class="guide-section">
-      <h2 id="Queries">Queries</h2>
+      <h2 id="queries-guides">Queries</h2>
       <ul>
-        
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-            <li>
-              <p>
-                <a href="/queries/instrumentation.html">Instrumentation</a>
-                <span class="guide-desc">
-                  Wrap query execution with custom logic
-                </span>
-              </p>
-            </li>
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
         
           
             <li>
@@ -1415,14 +418,70 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
-                <a href="/queries/analysis.html">Ahead-of-Time Analysis</a>
+                <a href="/queries/ast_analysis.html">Ahead-of-Time AST Analysis</a>
                 <span class="guide-desc">
                   Check incoming query strings and reject them if they don't pass your checks
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -1461,14 +520,29 @@
           
         
           
-            <li>
-              <p>
-                <a href="/queries/mutations.html">Mutations</a>
-                <span class="guide-desc">
-                  Creating, Updating and Deleting
-                </span>
-              </p>
-            </li>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -1484,6 +558,26 @@
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -1510,6 +604,22 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
                 <a href="/queries/multiplex.html">Multiplex</a>
@@ -1518,290 +628,78 @@
                 </span>
               </p>
             </li>
+          
+        
+          
+            <li>
+              <p>
+                <a href="/queries/interpreter.html">Interpreter</a>
+                <span class="guide-desc">
+                  A New Runtime for GraphQL-Ruby
+                </span>
+              </p>
+            </li>
+          
+        
+          
+            <li>
+              <p>
+                <a href="/queries/lookahead.html">Lookahead</a>
+                <span class="guide-desc">
+                  Detecting child selections during field resolution
+                </span>
+              </p>
+            </li>
+          
+        
+          
+            <li>
+              <p>
+                <a href="/queries/tracing.html">Tracing</a>
+                <span class="guide-desc">
+                  Observation hooks for execution
+                </span>
+              </p>
+            </li>
+          
+        
+          
+            <li>
+              <p>
+                <a href="/queries/backtrace_annotations.html">Backtrace Annotations</a>
+                <span class="guide-desc">
+                  Use the GraphQL backtrace for debugging
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/queries/instrumentation.html">Instrumentation</a>
+                <span class="guide-desc">
+                  Wrap query execution with custom logic
+                </span>
+              </p>
+            </li>
+          
+        
           
         
       </ul>
     </div>
   
     <div class="guide-section">
-      <h2 id="Types">Types</h2>
+      <h2 id="type-definitions-guides">Type Definitions</h2>
       <ul>
         
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
           
         
           
@@ -1811,263 +709,14 @@
           
         
           
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
+            <li>
+              <p>
+                <a href="/type_definitions/objects.html">Objects</a>
+                <span class="guide-desc">
+                  Objects expose data and link to other objects
+                </span>
+              </p>
+            </li>
           
         
           
@@ -2111,9 +760,40 @@
           
             <li>
               <p>
-                <a href="/types/introduction.html">Introduction</a>
+                <a href="/type_definitions/scalars.html">Scalars</a>
                 <span class="guide-desc">
-                  GraphQL types and the Ruby DSL
+                  Scalars are "simple" data types like integers and strings
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/type_definitions/enums.html">Enums</a>
+                <span class="guide-desc">
+                  Enums are sets of discrete values
                 </span>
               </p>
             </li>
@@ -2152,12 +832,16 @@
           
             <li>
               <p>
-                <a href="/types/abstract_types.html">Interface and Union Types</a>
+                <a href="/type_definitions/input_objects.html">Input Objects</a>
                 <span class="guide-desc">
-                  GraphQL's interface and union types contain one or more objects with something in common
+                  Input objects are sets of key-value pairs which can be used as field arguments.
                 </span>
               </p>
             </li>
+          
+        
+          
+        
           
         
           
@@ -2183,12 +867,122 @@
           
             <li>
               <p>
-                <a href="/types/circular_references.html">Circular References, Lazy-Loading</a>
+                <a href="/type_definitions/interfaces.html">Interfaces</a>
                 <span class="guide-desc">
-                  Use procs for lazy type resolution
+                  Interfaces are lists of fields which objects may implement
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/type_definitions/unions.html">Unions</a>
+                <span class="guide-desc">
+                  Unions are sets of types which may appear in the same place (but don't share fields).
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/type_definitions/lists.html">Lists</a>
+                <span class="guide-desc">
+                  Ordered lists containing other types
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/type_definitions/non_nulls.html">Non-Null Types</a>
+                <span class="guide-desc">
+                  Values which must be present
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/type_definitions/extensions.html">Extending the GraphQL-Ruby Type Definition System</a>
+                <span class="guide-desc">
+                  Adding metadata and custom helpers to the DSL
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/type_definitions/directives.html">Directives</a>
+                <span class="guide-desc">
+                  Special instructions for the GraphQL runtime
+                </span>
+              </p>
+            </li>
+          
+        
+          
+            <li>
+              <p>
+                <a href="/type_definitions/field_extensions.html">Field Extensions</a>
+                <span class="guide-desc">
+                  Programmatically modify field configuration and resolution
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -2203,198 +997,9 @@
     </div>
   
     <div class="guide-section">
-      <h2 id="Fields">Fields</h2>
+      <h2 id="authorization-guides">Authorization</h2>
       <ul>
         
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
           
         
           
@@ -2412,147 +1017,14 @@
           
         
           
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
+            <li>
+              <p>
+                <a href="/authorization/overview.html">Overview</a>
+                <span class="guide-desc">
+                  Overview of GraphQL authorization in general and an intro to the built-in framework.
+                </span>
+              </p>
+            </li>
           
         
           
@@ -2600,49 +1072,14 @@
           
         
           
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
+            <li>
+              <p>
+                <a href="/authorization/visibility.html">Visibility</a>
+                <span class="guide-desc">
+                  Programatically hide parts of the GraphQL schema from some users.
+                </span>
+              </p>
+            </li>
           
         
           
@@ -2672,7 +1109,14 @@
           
         
           
-        
+            <li>
+              <p>
+                <a href="/authorization/authorization.html">Authorization</a>
+                <span class="guide-desc">
+                  During execution, check if the current user has permission to access retrieved objects.
+                </span>
+              </p>
+            </li>
           
         
           
@@ -2702,7 +1146,14 @@
           
         
           
-        
+            <li>
+              <p>
+                <a href="/authorization/can_can_integration.html">CanCan Integration</a>
+                <span class="guide-desc">
+                  Hook up GraphQL to CanCan abilities
+                </span>
+              </p>
+            </li>
           
         
           
@@ -2720,11 +1171,25 @@
           
         
           
-        
+            <li>
+              <p>
+                <a href="/authorization/pundit_integration.html">Pundit Integration</a>
+                <span class="guide-desc">
+                  Hook up GraphQL to Pundit policies
+                </span>
+              </p>
+            </li>
           
         
           
-        
+            <li>
+              <p>
+                <a href="/authorization/scoping.html">Scoping</a>
+                <span class="guide-desc">
+                  Filter lists to match the current viewer and context
+                </span>
+              </p>
+            </li>
           
         
           
@@ -2783,7 +1248,12 @@
         
           
         
-          
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="fields-guides">Fields</h2>
+      <ul>
         
           
         
@@ -2798,6 +1268,12 @@
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
           
         
           
@@ -2836,11 +1312,51 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
-                <a href="/fields/function.html">GraphQL::Function</a>
+                <a href="/fields/resolvers.html">Resolvers</a>
                 <span class="guide-desc">
-                  Create reusable resolve behavior with GraphQL::Function
+                  Reusable, extendable resolution logic for complex fields
                 </span>
               </p>
             </li>
@@ -2851,14 +1367,54 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
-                <a href="/fields/instrumentation.html">Instrumentation</a>
+                <a href="/fields/validation.html">Validation</a>
                 <span class="guide-desc">
-                  Wrap and modify resolution behavior at schema build-time
+                  Rails-like validations for arguments and fields
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -2885,371 +1441,6 @@
           
         
           
-            <li>
-              <p>
-                <a href="/fields/resolve_wrapper.html">Wrapping Resolve Functions</a>
-                <span class="guide-desc">
-                  Modify execution by wrapping each field's resolve function
-                </span>
-              </p>
-            </li>
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-      </ul>
-    </div>
-  
-    <div class="guide-section">
-      <h2 id="Relay">Relay</h2>
-      <ul>
-        
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
         
           
         
@@ -3265,287 +1456,6 @@
         
           
         
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-            <li>
-              <p>
-                <a href="/relay/object_identification.html">Object Identification</a>
-                <span class="guide-desc">
-                  Working with Relay-style global IDs
-                </span>
-              </p>
-            </li>
-          
-        
-          
-        
-          
-            <li>
-              <p>
-                <a href="/relay/connections.html">Connections</a>
-                <span class="guide-desc">
-                  Build and customize Relay-style connection types
-                </span>
-              </p>
-            </li>
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-            <li>
-              <p>
-                <a href="/relay/mutations.html">Mutations</a>
-                <span class="guide-desc">
-                  Implement Relay-compliant mutation fields
-                </span>
-              </p>
-            </li>
           
         
           
@@ -3588,228 +1498,9 @@
     </div>
   
     <div class="guide-section">
-      <h2 id="GraphQL Pro">GraphQL Pro</h2>
+      <h2 id="mutations-guides">Mutations</h2>
       <ul>
         
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
           
         
           
@@ -3817,69 +1508,14 @@
           
         
           
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
+            <li>
+              <p>
+                <a href="/mutations/mutation_root.html">Mutation Root</a>
+                <span class="guide-desc">
+                  The Mutation object is the entry point for mutation operations.
+                </span>
+              </p>
+            </li>
           
         
           
@@ -3919,11 +1555,14 @@
           
         
           
-        
-          
-        
-          
-        
+            <li>
+              <p>
+                <a href="/mutations/mutation_classes.html">Mutation Classes</a>
+                <span class="guide-desc">
+                  Use mutation classes to implement behavior, then hook them up to your schema.
+                </span>
+              </p>
+            </li>
           
         
           
@@ -3955,7 +1594,14 @@
           
         
           
-        
+            <li>
+              <p>
+                <a href="/mutations/mutation_errors.html">Mutation errors</a>
+                <span class="guide-desc">
+                  Tips for handling and returning errors from mutations
+                </span>
+              </p>
+            </li>
           
         
           
@@ -3989,7 +1635,14 @@
           
         
           
-        
+            <li>
+              <p>
+                <a href="/mutations/mutation_authorization.html">Mutation authorization</a>
+                <span class="guide-desc">
+                  Checking permissions for mutations
+                </span>
+              </p>
+            </li>
           
         
           
@@ -4078,7 +1731,12 @@
         
           
         
-          
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="errors-guides">Errors</h2>
+      <ul>
         
           
         
@@ -4099,7 +1757,14 @@
           
         
           
-        
+            <li>
+              <p>
+                <a href="/errors/overview.html">Errors in GraphQL</a>
+                <span class="guide-desc">
+                  A conceptual introduction to errors in GraphQL
+                </span>
+              </p>
+            </li>
           
         
           
@@ -4121,7 +1786,14 @@
           
         
           
-        
+            <li>
+              <p>
+                <a href="/errors/execution_errors.html">Top-level "errors"</a>
+                <span class="guide-desc">
+                  The top-level "errors" array and how to use it.
+                </span>
+              </p>
+            </li>
           
         
           
@@ -4183,12 +1855,1153 @@
           
             <li>
               <p>
-                <a href="http://graphql.pro">GraphQL::Pro Home</a>
+                <a href="/errors/error_handling.html">Error Handling</a>
+                <span class="guide-desc">
+                  Rescuing application errors from field resolvers
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/errors/type_errors.html">Type Errors</a>
+                <span class="guide-desc">
+                  Handling type errors
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="pagination-guides">Pagination</h2>
+      <ul>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/pagination/overview.html">Overview</a>
+                <span class="guide-desc">
+                  Introduction to pagination in GraphQL
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/pagination/connection_concepts.html">Connection Concepts</a>
+                <span class="guide-desc">
+                  Introduction to Connections
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/pagination/using_connections.html">Using Connections</a>
+                <span class="guide-desc">
+                  Pagination with GraphQL-Ruby's built-in connections
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/pagination/custom_connections.html">Custom Connections</a>
+                <span class="guide-desc">
+                  Building & using cursor-based connections in GraphQL-Ruby
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/pagination/cursors.html">Cursors</a>
+                <span class="guide-desc">
+                  Advancing through lists with opaque cursors
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/pagination/stable_relation_connections.html">Stable Relation Connections</a>
+                <span class="guide-desc">
+                  Advanced pagination for ActiveRecord
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="relay-guides">Relay</h2>
+      <ul>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/relay/range_add.html">RangeAdd helper for mutations</a>
+                <span class="guide-desc">
+                  A helper for Relay's RANGE_ADD operations
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="dataloader-guides">Dataloader</h2>
+      <ul>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/dataloader/overview.html">Overview</a>
+                <span class="guide-desc">
+                  Getting started with the Fiber-based Dataloader
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/dataloader/sources.html">Sources</a>
+                <span class="guide-desc">
+                  Batch-loading objects for GraphQL::Dataloader
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/dataloader/dataloader.html">Dataloader</a>
+                <span class="guide-desc">
+                  The Dataloader orchestrates Fibers and Sources
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/dataloader/adopting.html">Dataloader vs. GraphQL-Batch</a>
+                <span class="guide-desc">
+                  Comparing and Contrasting Batch Loading Options
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="subscriptions-guides">Subscriptions</h2>
+      <ul>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/overview.html">Overview</a>
+                <span class="guide-desc">
+                  Introduction to Subscriptions in GraphQL-Ruby
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/subscription_classes.html">Subscription Classes</a>
+                <span class="guide-desc">
+                  Subscription resolvers for pushing updates to clients
+                </span>
+              </p>
+            </li>
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/subscription_type.html">Subscription Type</a>
+                <span class="guide-desc">
+                  The root type for subscriptions
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/triggers.html">Triggers</a>
+                <span class="guide-desc">
+                  Sending updates from your application to GraphQL
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/broadcast.html">Broadcasts</a>
+                <span class="guide-desc">
+                  Delivering the same GraphQL result to multiple subscribers
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/implementation.html">Implementation</a>
+                <span class="guide-desc">
+                  Subscription execution and delivery
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/action_cable_implementation.html">Action Cable Implementation</a>
+                <span class="guide-desc">
+                  GraphQL subscriptions over ActionCable
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/pusher_implementation.html">Pusher Implementation</a>
+                <span class="guide-desc">
+                  GraphQL subscriptions over Pusher
+                </span>
+              </p>
+            </li>
+          
+        
+          
+            <li>
+              <p>
+                <a href="/subscriptions/ably_implementation.html">Ably Implementation</a>
+                <span class="guide-desc">
+                  GraphQL subscriptions over Ably
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="graphql-pro-guides">GraphQL Pro</h2>
+      <ul>
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="https://graphql.pro">GraphQL::Pro Home</a>
                 <span class="guide-desc">
                   Overview of GraphQL::Pro features
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -4211,41 +3024,96 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
-                <a href="/pro/authorization.html">Authorization Framework</a>
+                <a href="/pro/dashboard.html">Dashboard</a>
                 <span class="guide-desc">
-                  GraphQL::Pro's comprehensive access control system, including CanCan and Pundit integrations
+                  Installing GraphQL-Pro's Dashboard
                 </span>
               </p>
             </li>
           
         
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-            <li>
-              <p>
-                <a href="/pro/monitoring.html">Monitoring</a>
-                <span class="guide-desc">
-                  GraphQL plugins for NewRelic, AppSignal, Scout, Skylight and Datadog
-                </span>
-              </p>
-            </li>
           
         
           
@@ -4274,6 +3142,12 @@
           
         
           
+        
+          
+        
+          
+        
+          
             <li>
               <p>
                 <a href="/pro/encoders.html">Encrypted, Versioned Cursors and IDs</a>
@@ -4290,579 +3164,55 @@
         
           
         
+          
+        
+          
+            <li>
+              <p>
+                <a href="/pro/privacy.html">Privacy</a>
+                <span class="guide-desc">
+                  Privacy Policy for GraphQL::Pro
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
       </ul>
     </div>
   
     <div class="guide-section">
-      <h2 id="GraphQL Pro - OperationStore">GraphQL Pro - OperationStore</h2>
+      <h2 id="graphql-pro-operationstore-guides">GraphQL Pro - OperationStore</h2>
       <ul>
-        
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
         
           
         
@@ -4906,6 +3256,14 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
                 <a href="/operation_store/getting_started.html">Getting Started</a>
@@ -4914,6 +3272,94 @@
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/operation_store/active_record_backend.html">ActiveRecord Backend</a>
+                <span class="guide-desc">
+                  Storing persisted queries with ActiveRecord
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/operation_store/redis_backend.html">Redis Backend</a>
+                <span class="guide-desc">
+                  Storing persisted queries with Redis
+                </span>
+              </p>
+            </li>
+          
+        
           
         
           
@@ -4940,6 +3386,22 @@
           
         
           
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
             <li>
               <p>
                 <a href="/operation_store/server_management.html">Server Management</a>
@@ -4955,16 +3417,38 @@
           
         
           
-        
-          
             <li>
               <p>
-                <a href="/operation_store/authentication.html">Authentication</a>
+                <a href="/operation_store/access_control.html">Access Control</a>
                 <span class="guide-desc">
-                  OperationStore uses client secrets to authenticate sync requests.
+                  Manage authentication & visibility for your OperationStore server.
                 </span>
               </p>
             </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -4991,9 +3475,390 @@
     </div>
   
     <div class="guide-section">
-      <h2 id="Other">Other</h2>
+      <h2 id="graphql-pro-defer-guides">GraphQL Pro - Defer</h2>
       <ul>
         
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/defer/overview.html">Overview</a>
+                <span class="guide-desc">
+                  What is @defer, and why use it?
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/defer/setup.html">Server Setup</a>
+                <span class="guide-desc">
+                  Configuring the schema and server to use @defer
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/defer/usage.html">Usage</a>
+                <span class="guide-desc">
+                  Using @defer on the client side
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="javascript-client-guides">JavaScript Client</h2>
+      <ul>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/javascript_client/overview.html">Overview</a>
+                <span class="guide-desc">
+                  Getting Started with GraphQL-Ruby's Javascript client, graphql-ruby-client.
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/javascript_client/sync.html">OperationStore Sync</a>
+                <span class="guide-desc">
+                  Javascript tooling for persisted queries with GraphQL-Ruby
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/javascript_client/apollo_subscriptions.html">Apollo Subscriptions</a>
+                <span class="guide-desc">
+                  GraphQL subscriptions with GraphQL-Ruby and Apollo Client
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/javascript_client/relay_subscriptions.html">Relay Subscriptions</a>
+                <span class="guide-desc">
+                  GraphQL subscriptions with GraphQL-Ruby and Relay Modern
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
         
           
         
@@ -5071,6 +3936,100 @@
         
           
         
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="language-tools-guides">Language Tools</h2>
+      <ul>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+            <li>
+              <p>
+                <a href="/language_tools/visitor.html">AST Visitor</a>
+                <span class="guide-desc">
+                  Analyze and modify parsed GraphQL code
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -5187,6 +4146,25 @@
         
           
         
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="testing-guides">Testing</h2>
+      <ul>
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
           
         
           
@@ -5200,6 +4178,21 @@
           
         
           
+            <li>
+              <p>
+                <a href="/testing/overview.html">Overview</a>
+                <span class="guide-desc">
+                  Testing a GraphQL system
+                </span>
+              </p>
+            </li>
+          
+        
+          
+        
+          
+        
+          
         
           
         
@@ -5220,6 +4213,17 @@
           
         
           
+            <li>
+              <p>
+                <a href="/testing/schema_structure.html">Schema Structure</a>
+                <span class="guide-desc">
+                  Make sure that your schema changes are backwards-compatible
+                </span>
+              </p>
+            </li>
+          
+        
+          
         
           
         
@@ -5240,6 +4244,17 @@
           
         
           
+            <li>
+              <p>
+                <a href="/testing/integration_tests.html">Integration Tests</a>
+                <span class="guide-desc">
+                  Run the whole GraphQL stack in tests
+                </span>
+              </p>
+            </li>
+          
+        
+          
         
           
         
@@ -5358,6 +4373,13 @@
           
         
           
+        
+      </ul>
+    </div>
+  
+    <div class="guide-section">
+      <h2 id="other-guides">Other</h2>
+      <ul>
         
           
         
@@ -5557,10 +4579,6 @@
           
         
           
-        
-          
-        
-          
             <li>
               <p>
                 <a href="/getting_started.html">Getting Started</a>
@@ -5569,16 +4587,6 @@
                 </span>
               </p>
             </li>
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
           
         
           
@@ -5594,84 +4602,13 @@
             </li>
           
         
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
-          
-        
       </ul>
     </div>
   
 </div>
 
     </div>
+    <script src="https://cdn.jsdelivr.net/algoliasearch/3/algoliasearchLite.min.js"></script>
     <script src="/js/search.js"></script>
   </body>
 </html>

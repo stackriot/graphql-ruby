@@ -19,9 +19,10 @@
           </a>
           <a href="/getting_started">Get Started</a>
           <a href="/guides">Guides</a>
-          <a href="http://www.rubydoc.info/gems/graphql/1.6.6/">API</a>
+          <a href="/api-doc/1.12.13/">API</a>
           <a href="https://tinyletter.com/graphql-ruby">Newsletter</a>
           <a href="https://github.com/rmosolgo/graphql-ruby">Source Code</a>
+          <a href="https://graphql.pro">Upgrade to Pro</a>
           <input
             class="search-input"
             onkeyup="GraphQLRubySearch.run(this)"
@@ -31,7 +32,8 @@
         </div>
       </div>
       <div class="search-results-container">
-        <div id="search-results"></div>
+        <div id="search-results">
+        </div>
       </div>
     </div>
     <div class="container">
@@ -45,14 +47,14 @@
     <div class="hero-feature">
       <div class="teaser">
 <figure class="highlight"><pre><code class="language-bash" data-lang="bash"><span class="c"># Download the gem:</span>
-gem install graphql
+gem <span class="nb">install </span>graphql
 <span class="c"># Setup with Rails:</span>
 rails generate graphql:install</code></pre></figure>
       </div>
       <div class="teaser">
         <p>
           <a href="/getting_started">Get going fast</a> with the <code><a href="https://rubygems.org/gems/graphql">graphql</a></code> gem,
-          battle-tested and trusted by <a href="https://githubengineering.com/the-github-graphql-api/#open-source">GitHub</a> and <a href="http://www.graphql.com/articles/graphql-at-shopify">Shopify</a>.
+          battle-tested and trusted by <a href="https://githubengineering.com/the-github-graphql-api/#open-source">GitHub</a>, <a href="https://www.graphql.com/articles/graphql-at-shopify">Shopify</a> and <a href="https://www.kickstarter.com/">Kickstarter</a>.
         </p>
       </div>
     </div>
@@ -63,17 +65,16 @@ rails generate graphql:install</code></pre></figure>
       <div class="teaser">
         <p>
           Describe your application with the
-          <a href="/types/introduction">GraphQL type system</a>
+          <a href="/schema/definition">GraphQL schema</a>
           to create a self-documenting, strongly-typed API.
         </p>
       </div>
       <div class="teaser">
 <figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="c1"># app/graphql/types/profile_type.rb</span>
-<span class="no">Types</span><span class="o">::</span><span class="no">ProfileType</span> <span class="o">=</span> <span class="no">GraphQL</span><span class="o">::</span><span class="no">ObjectType</span><span class="p">.</span><span class="nf">define</span> <span class="k">do</span>
-  <span class="nb">name</span> <span class="s2">"Profile"</span>
-  <span class="n">field</span> <span class="ss">:id</span><span class="p">,</span> <span class="o">!</span><span class="n">types</span><span class="o">.</span><span class="no">ID</span>
-  <span class="n">field</span> <span class="ss">:name</span><span class="p">,</span> <span class="o">!</span><span class="n">types</span><span class="o">.</span><span class="no">String</span>
-  <span class="n">field</span> <span class="ss">:avatar</span><span class="p">,</span> <span class="no">Types</span><span class="o">::</span><span class="no">PhotoType</span>
+<span class="k">class</span> <span class="nc">Types::ProfileType</span> <span class="o">&lt;</span> <span class="no">Types</span><span class="o">::</span><span class="no">BaseObject</span>
+  <span class="n">field</span> <span class="ss">:id</span><span class="p">,</span> <span class="no">ID</span><span class="p">,</span> <span class="ss">null: </span><span class="kp">false</span>
+  <span class="n">field</span> <span class="ss">:name</span><span class="p">,</span> <span class="no">String</span><span class="p">,</span> <span class="ss">null: </span><span class="kp">false</span>
+  <span class="n">field</span> <span class="ss">:avatar</span><span class="p">,</span> <span class="no">Types</span><span class="o">::</span><span class="no">PhotoType</span><span class="p">,</span> <span class="ss">null: </span><span class="kp">true</span>
 <span class="k">end</span></code></pre></figure>
       </div>
     </div>
@@ -101,10 +102,11 @@ rails generate graphql:install</code></pre></figure>
 </div>
 
 <h3 style="text-align: center;">
-  Add <a href="http://graphql.org">GraphQL</a> to your Ruby app. <a href="/getting_started">Get Started!</a>
+  Add <a href="https://graphql.org">GraphQL</a> to your Ruby app. <a href="/getting_started">Get Started!</a>
 </h3>
 
     </div>
+    <script src="https://cdn.jsdelivr.net/algoliasearch/3/algoliasearchLite.min.js"></script>
     <script src="/js/search.js"></script>
   </body>
 </html>
