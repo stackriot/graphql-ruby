@@ -13,35 +13,46 @@ Gem::Specification.new do |s|
   s.authors     = ["Robert Mosolgo"]
   s.email       = ["rdmosolgo@gmail.com"]
   s.license     = "MIT"
-  s.required_ruby_version = ">= 2.2.0" # bc `.to_sym` used on user input
+  s.required_ruby_version = ">= 2.7.0"
   s.metadata    = {
     "homepage_uri" => "https://graphql-ruby.org",
     "changelog_uri" => "https://github.com/rmosolgo/graphql-ruby/blob/master/CHANGELOG.md",
     "source_code_uri" => "https://github.com/rmosolgo/graphql-ruby",
     "bug_tracker_uri" => "https://github.com/rmosolgo/graphql-ruby/issues",
-    "mailing_list_uri"  => "https://tinyletter.com/graphql-ruby",
+    "mailing_list_uri"  => "https://buttondown.email/graphql-ruby",
+    "rubygems_mfa_required" => "true",
   }
 
-  s.files = Dir["{lib}/**/*", "MIT-LICENSE", "readme.md", ".yardopts"]
+  s.files = Dir["{lib}/**/*", "MIT-LICENSE", "readme.md", ".rdoc_options"]
+
+  s.add_runtime_dependency "base64"
+  s.add_runtime_dependency "fiber-storage"
+  s.add_runtime_dependency "logger"
 
   s.add_development_dependency "benchmark-ips"
+  s.add_development_dependency "benchmark-memory"
   s.add_development_dependency "concurrent-ruby", "~>1.0"
+  s.add_development_dependency "google-protobuf"
+  s.add_development_dependency "graphql-batch"
   s.add_development_dependency "memory_profiler"
-  # Remove this limit when minitest-reports is compatible
-  # https://github.com/kern/minitest-reporters/pull/220
-  s.add_development_dependency "minitest", "~> 5.9.0"
-  s.add_development_dependency "minitest-focus", "~> 1.1"
-  s.add_development_dependency "minitest-reporters", "~>1.0"
-  s.add_development_dependency "racc", "~> 1.4"
-  s.add_development_dependency "rake", "~> 12"
-  s.add_development_dependency "rubocop", "0.68" # for Ruby 2.2 enforcement
-  # required for upgrader
-  s.add_development_dependency "parser"
-  # website stuff
-  s.add_development_dependency "jekyll"
-  s.add_development_dependency "yard"
-  s.add_development_dependency "jekyll-algolia" if RUBY_VERSION >= '2.4.0'
-  s.add_development_dependency "jekyll-redirect-from" if RUBY_VERSION >= '2.4.0'
+
+  s.add_development_dependency "minitest"
+  s.add_development_dependency "minitest-focus"
+  s.add_development_dependency "minitest-reporters"
+  s.add_development_dependency "ostruct"
+  s.add_development_dependency "parallel_tests"
+  s.add_development_dependency "rake"
+  s.add_development_dependency 'rake-compiler'
+  s.add_development_dependency 'rdoc'
+  s.add_development_dependency "rubocop"
+  s.add_development_dependency "rubocop-sorbet"
+  s.add_development_dependency "simplecov"
+  s.add_development_dependency "simplecov-lcov"
+  s.add_development_dependency "sorbet"
+  s.add_development_dependency "sorbet-runtime"
+  s.add_development_dependency "tapioca"
+  s.add_development_dependency "undercover"
   s.add_development_dependency "m", "~> 1.5.0"
+  s.add_development_dependency "mutex_m"
   s.add_development_dependency "webrick"
 end

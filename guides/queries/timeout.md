@@ -1,12 +1,4 @@
----
-title: Timeout
-layout: guide
-doc_stub: false
-search: true
-section: Queries
-desc: Cutting off GraphQL execution
-index: 5
----
+# Timeout
 
 You can apply a timeout to query execution with the `GraphQL::Schema::Timeout` plugin. For example:
 
@@ -20,7 +12,7 @@ After `max_seconds`, no new fields will be resolved. Instead, errors will be add
 
 __Note__ that this _does not interrupt_ field execution (doing so is [buggy](https://www.mikeperham.com/2015/05/08/timeout-rubys-most-dangerous-api/)). If you're making external calls (eg, HTTP requests or database queries), make sure to use a library-specific timeout for that operation (eg, [Redis timeout](https://github.com/redis/redis-rb#timeouts), [Net::HTTP](https://ruby-doc.org/stdlib-2.4.1/libdoc/net/http/rdoc/Net/HTTP.html)'s `ssl_timeout`, `open_timeout`, and `read_timeout`).
 
-### Custom Error Handling
+## Custom Error Handling
 
 To log the error, provide a subclass of `GraphQL::Schema::Timeout` with an overridden `handle_timeout` method:
 
@@ -36,9 +28,9 @@ class MySchema < GraphQL::Schema
 end
 ```
 
-### Customizing the Timeout Window
+## Customizing the Timeout Window
 
-To dynamically pick a timeout duration (or bypass it), override {{ "GraphQL::Schema::Timeout#max_seconds" | api_doc }} in your subclass. To bypass the timeout altogether, `max_seconds` can return `false`.
+To dynamically pick a timeout duration (or bypass it), override [GraphQL::Schema::Timeout#max_seconds](rdoc-ref:GraphQL::Schema::Timeout#max_seconds) in your subclass. To bypass the timeout altogether, `max_seconds` can return `false`.
 
 For example:
 
@@ -63,17 +55,24 @@ class MySchema < GraphQL::Schema
 end
 ```
 
-### Validation
+## Validation and Analysis
 
 Queries can originate from a user, and may be crafted in a manner to take a long time to validate against the schema.
 
-It is possible to limit how many seconds the static validation rules are allowed to run before returning a validation timeout error. The default is no timeout.
+It is possible to limit how many seconds the static validation rules and analysers are allowed to run before returning a validation timeout error. By default, validation and query analysis have a 3-second timeout. You can customize this timeout or disable it completely:
 
 For example:
 
 ```ruby
+# Customize timeout (in seconds)
 class MySchema < GraphQL::Schema
+  # Applies to static validation and query analysis
   validate_timeout 10
+end
+
+# OR disable timeout completely
+class MySchema < GraphQL::Schema
+  validate_timeout nil
 end
 ```
 

@@ -4,31 +4,53 @@ require "spec_helper"
 describe GraphQL::Schema::Field::ConnectionExtension do
   class ConnectionShortcutSchema < GraphQL::Schema
     class ShortcutResolveExtension < GraphQL::Schema::FieldExtension
-      def resolve(arguments:, **rest)
+      def resolve(object: nil, objects: nil, arguments:, **rest)
         collection = ["a", "b", "c", "d", "e"]
         if (filter = arguments[:starting_with])
           collection.select! { |x| x.start_with?(filter) }
         end
-        collection
+        if objects.nil?
+          collection
+        else
+          [collection]
+        end
       end
     end
 
     class CustomStringConnection < GraphQL::Types::Relay::BaseConnection
       edge_type(GraphQL::Types::String.edge_type)
-      field :argument_data, [String], null: false
+      field :argument_data, [String], null: false, resolve_each: true
+
+      def self.argument_data(object, context)
+        [object.arguments.class.name, *object.arguments.keys.map(&:inspect).sort]
+      end
 
       def argument_data
-        [object.arguments.class.name, *object.arguments.keys.map(&:inspect)]
+        self.class.argument_data(object, context)
       end
     end
 
     class Query < GraphQL::Schema::Object
-      field :names, CustomStringConnection, null: false, extensions: [ShortcutResolveExtension] do
+      field :names, CustomStringConnection, null: false, extensions: [ShortcutResolveExtension], resolve_static: true do
         argument :starting_with, String, required: false
       end
 
-      def names
+      field :cached_names, CustomStringConnection, null: false, resolve_static: true
+
+      def self.cached_names(context)
+        context.raw_value({ "nodes" => ["cached"] })
+      end
+
+      def cached_names
+        self.class.cached_names(context)
+      end
+
+      def self.names(context)
         raise "This should never be called"
+      end
+
+      def names
+        self.class.names(context)
       end
     end
 
@@ -38,6 +60,11 @@ describe GraphQL::Schema::Field::ConnectionExtension do
   it "implements connection handling even when resolve is shortcutted" do
     res = ConnectionShortcutSchema.execute("{ names(first: 2) { nodes } }")
     assert_equal ["a", "b"], res["data"]["names"]["nodes"]
+  end
+
+  it "returns raw connection values without wrapping them in the legacy interpreter" do
+    res = ConnectionShortcutSchema.execute_legacy("{ cachedNames { nodes } }")
+    assert_equal({ "data" => { "cachedNames" => { "nodes" => ["cached"] } } }, res.to_h)
   end
 
   it "assigns arguments to the connection instance" do

@@ -1,12 +1,4 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Subscriptions
-title: Subscription Type
-desc: The root type for subscriptions
-index: 1
----
+# Subscription Type
 
 `Subscription` is the entry point for all subscriptions in a GraphQL system. Each field corresponds to an event which may be subscribed to:
 
@@ -40,9 +32,6 @@ To add subscriptions to your system, define an `ObjectType` named `Subscription`
 ```ruby
 # app/graphql/types/subscription_type.rb
 class Types::SubscriptionType < GraphQL::Schema::Object
-  # If you're using the interpreter, also add:
-  extend GraphQL::Subscriptions::SubscriptionRoot
-
   field :post_was_published, subscription: Subscriptions::PostWasPublished
   # ...
 end
@@ -60,6 +49,6 @@ class MySchema < GraphQL::Schema
 end
 ```
 
-See {% internal_link "Implementing Subscriptions","subscriptions/implementation" %} for more about actually delivering updates.
+See [Implementing Subscriptions](/subscriptions/implementation) for more about actually delivering updates.
 
-See {% internal_link "Subscription Classes", "subscriptions/subscription_classes" %} for more about implementing subscription root fields.
+See [Subscription Classes](/subscriptions/subscription_classes) for more about implementing subscription root fields.

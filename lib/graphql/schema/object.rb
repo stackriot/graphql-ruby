@@ -1,20 +1,41 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 require "graphql/query/null_context"
 
 module GraphQL
   class Schema
     class Object < GraphQL::Schema::Member
-      extend GraphQL::Schema::Member::AcceptsDefinition
+      extend GraphQL::Schema::Member::HasAuthorization
       extend GraphQL::Schema::Member::HasFields
+      extend GraphQL::Schema::Member::HasInterfaces
+      include Member::HasDataloader
 
-      # @return [Object] the application object this type is wrapping
+      # Raised when an Object doesn't have any field defined and hasn't explicitly opted out of this requirement
+      class FieldsAreRequiredError < GraphQL::Error
+        def initialize(object_type)
+          message = "Object types must have fields, but #{object_type.graphql_name} doesn't have any. Define a field for this type, remove it from your schema, or add `has_no_fields(true)` to its definition."
+          super(message)
+        end
+      end
+
+      # **Returns**
+      #
+      # - `Object` — the application object this type is wrapping
       attr_reader :object
 
-      # @return [GraphQL::Query::Context] the context instance for this query
+      # **Returns**
+      #
+      # - `GraphQL::Query::Context` — the context instance for this query
       attr_reader :context
 
-      # @return [GraphQL::Dataloader]
+      # **Returns**
+      #
+      # - `GraphQL::Dataloader`
+      #
+      # :call-seq:
+      #   dataloader() -> GraphQL::Dataloader
       def dataloader
         context.dataloader
       end
@@ -26,56 +47,90 @@ module GraphQL
       end
 
       class << self
-        # This is protected so that we can be sure callers use the public method, {.authorized_new}
-        # @see authorized_new to make instances
+        # This is protected so that we can be sure callers use the public method, [.authorized_new](rdoc-ref:.authorized_new)
+        # See [authorized_new](rdoc-ref:authorized_new) to make instances
         protected :new
+
+        def wrap_scoped(object, context)
+          scoped_new(object, context)
+        end
+
+        # This is called by the runtime to return an object to call methods on.
+        def wrap(object, context)
+          authorized_new(object, context)
+        end
 
         # Make a new instance of this type _if_ the auth check passes,
         # otherwise, raise an error.
         #
         # Probably only the framework should call this method.
         #
-        # This might return a {GraphQL::Execution::Lazy} if the user-provided `.authorized?`
+        # This might return a [GraphQL::Execution::Lazy](rdoc-ref:GraphQL::Execution::Lazy) if the user-provided `.authorized?`
         # hook returns some lazy value (like a Promise).
         #
-        # The reason that the auth check is in this wrapper method instead of {.new} is because
+        # The reason that the auth check is in this wrapper method instead of [.new](rdoc-ref:.new) is because
         # of how it might return a Promise. It would be weird if `.new` returned a promise;
-        # It would be a headache to try to maintain Promise-y state inside a {Schema::Object}
+        # It would be a headache to try to maintain Promise-y state inside a [Schema::Object](rdoc-ref:Schema::Object)
         # instance. So, hopefully this wrapper method will do the job.
         #
-        # @param object [Object] The thing wrapped by this object
-        # @param context [GraphQL::Query::Context]
-        # @return [GraphQL::Schema::Object, GraphQL::Execution::Lazy]
-        # @raise [GraphQL::UnauthorizedError] if the user-provided hook returns `false`
+        # **Parameters**
+        #
+        # - `object` (`Object`) — The thing wrapped by this object
+        # - `context` (`GraphQL::Query::Context`)
+        #
+        # **Returns**
+        #
+        # - `GraphQL::Schema::Object, GraphQL::Execution::Lazy`
+        #
+        # **Raises**
+        #
+        # - `GraphQL::UnauthorizedError` — if the user-provided hook returns `false`
+        #
+        # :call-seq:
+        #   authorized_new(Object object, GraphQL::Query::Context context) -> GraphQL::Schema::Object | GraphQL::Execution::Lazy | GraphQL::UnauthorizedError
         def authorized_new(object, context)
-          trace_payload = { context: context, type: self, object: object, path: context[:current_path] }
-
-          maybe_lazy_auth_val = context.query.trace("authorized", trace_payload) do
-            context.query.with_error_handling do
+          context.query.current_trace.begin_authorized(self, object, context)
+          raised_auth_err = nil #: GraphQL::UnauthorizedError?
+          begin
+            maybe_lazy_auth_val = context.query.current_trace.authorized(query: context.query, type: self, object: object) do
               begin
                 authorized?(object, context)
               rescue GraphQL::UnauthorizedError => err
-                context.schema.unauthorized_object(err)
+                # Raising is equivalent to returning `false`; `unauthorized_object` is called below
+                raised_auth_err = err
+                false
+              rescue StandardError => err
+                context.query.handle_or_reraise(err)
               end
             end
+          ensure
+            context.query.current_trace.end_authorized(self, object, context, maybe_lazy_auth_val)
           end
 
           auth_val = if context.schema.lazy?(maybe_lazy_auth_val)
             GraphQL::Execution::Lazy.new do
-              context.query.trace("authorized_lazy", trace_payload) do
-                context.schema.sync_lazy(maybe_lazy_auth_val)
+              context.query.current_trace.begin_authorized(self, object, context)
+              context.query.current_trace.authorized_lazy(query: context.query, type: self, object: object) do
+                res = begin
+                  context.schema.sync_lazy(maybe_lazy_auth_val)
+                rescue GraphQL::UnauthorizedError => err
+                  raised_auth_err = err
+                  false
+                end
+                context.query.current_trace.end_authorized(self, object, context, res)
+                res
               end
             end
           else
             maybe_lazy_auth_val
           end
 
-          context.schema.after_lazy(auth_val) do |is_authorized|
+          context.query.after_lazy(auth_val) do |is_authorized|
             if is_authorized
               self.new(object, context)
             else
               # It failed the authorization check, so go to the schema's authorized object hook
-              err = GraphQL::UnauthorizedError.new(object: object, type: self, context: context)
+              err = raised_auth_err || GraphQL::UnauthorizedError.new(object: object, type: self, context: context)
               # If a new value was returned, wrap that instead of the original value
               begin
                 new_obj = context.schema.unauthorized_object(err)
@@ -88,6 +143,10 @@ module GraphQL
             end
           end
         end
+
+        def scoped_new(object, context)
+          self.new(object, context)
+        end
       end
 
       def initialize(object, context)
@@ -98,114 +157,14 @@ module GraphQL
       class << self
         # Set up a type-specific invalid null error to use when this object's non-null fields wrongly return `nil`.
         # It should help with debugging and bug tracker integrations.
-        def inherited(child_class)
-          child_class.const_set(:InvalidNullError, GraphQL::InvalidNullError.subclass_for(child_class))
-          super
-        end
-
-        def implements(*new_interfaces, **options)
-          new_memberships = []
-          new_interfaces.each do |int|
-            if int.is_a?(Module)
-              unless int.include?(GraphQL::Schema::Interface)
-                raise "#{int} cannot be implemented since it's not a GraphQL Interface. Use `include` for plain Ruby modules."
-              end
-
-              new_memberships << int.type_membership_class.new(int, self, **options)
-
-              # Include the methods here,
-              # `.fields` will use the inheritance chain
-              # to find inherited fields
-              include(int)
-            elsif int.is_a?(GraphQL::InterfaceType)
-              new_memberships << int.type_membership_class.new(int, self, **options)
-            elsif int.is_a?(String) || int.is_a?(GraphQL::Schema::LateBoundType)
-              if options.any?
-                raise ArgumentError, "`implements(...)` doesn't support options with late-loaded types yet. Remove #{options} and open an issue to request this feature."
-              end
-              new_memberships << int
-            else
-              raise ArgumentError, "Unexpected interface definition (expected module): #{int} (#{int.class})"
-            end
+        def const_missing(name)
+          if name == :InvalidNullError
+            custom_err_class = GraphQL::InvalidNullError.subclass_for(self)
+            const_set(:InvalidNullError, custom_err_class)
+            custom_err_class
+          else
+            super
           end
-
-          # Remove any interfaces which are being replaced (late-bound types are updated in place this way)
-          own_interface_type_memberships.reject! { |old_i_m|
-            old_int_type = old_i_m.respond_to?(:abstract_type) ? old_i_m.abstract_type : old_i_m
-            old_name = Schema::Member::BuildType.to_type_name(old_int_type)
-
-            new_memberships.any? { |new_i_m|
-              new_int_type = new_i_m.respond_to?(:abstract_type) ? new_i_m.abstract_type : new_i_m
-              new_name = Schema::Member::BuildType.to_type_name(new_int_type)
-
-              new_name == old_name
-            }
-          }
-          own_interface_type_memberships.concat(new_memberships)
-        end
-
-        def own_interface_type_memberships
-          @own_interface_type_memberships ||= []
-        end
-
-        def interface_type_memberships
-          own_interface_type_memberships + (superclass.respond_to?(:interface_type_memberships) ? superclass.interface_type_memberships : [])
-        end
-
-        # param context [Query::Context] If omitted, skip filtering.
-        def interfaces(context = GraphQL::Query::NullContext)
-          visible_interfaces = []
-          unfiltered = context == GraphQL::Query::NullContext
-          own_interface_type_memberships.each do |type_membership|
-            # During initialization, `type_memberships` can hold late-bound types
-            case type_membership
-            when String, Schema::LateBoundType
-              visible_interfaces << type_membership
-            when Schema::TypeMembership
-              if unfiltered || type_membership.visible?(context)
-                visible_interfaces << type_membership.abstract_type
-              end
-            else
-              raise "Invariant: Unexpected type_membership #{type_membership.class}: #{type_membership.inspect}"
-            end
-          end
-          visible_interfaces + (superclass <= GraphQL::Schema::Object ? superclass.interfaces(context) : [])
-        end
-
-        # @return [Hash<String => GraphQL::Schema::Field>] All of this object's fields, indexed by name
-        # @see get_field A faster way to find one field by name ({#fields} merges hashes of inherited fields; {#get_field} just looks up one field.)
-        def fields
-          all_fields = super
-          interfaces.each do |int|
-            # Include legacy-style interfaces, too
-            if int.is_a?(GraphQL::InterfaceType)
-              int_f = {}
-              int.fields.each do |name, legacy_field|
-                int_f[name] = field_class.from_options(name, field: legacy_field)
-              end
-              all_fields = int_f.merge(all_fields)
-            end
-          end
-          all_fields
-        end
-
-        # @return [GraphQL::ObjectType]
-        def to_graphql
-          obj_type = GraphQL::ObjectType.new
-          obj_type.name = graphql_name
-          obj_type.description = description
-          obj_type.structural_interface_type_memberships = interface_type_memberships
-          obj_type.introspection = introspection
-          obj_type.mutation = mutation
-          obj_type.ast_node = ast_node
-          fields.each do |field_name, field_inst|
-            field_defn = field_inst.to_graphql
-            obj_type.fields[field_defn.name] = field_defn
-          end
-
-          obj_type.metadata[:type_class] = self
-
-          obj_type
         end
 
         def kind

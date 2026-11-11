@@ -7,19 +7,45 @@ require "sequel"
 if ENV['DATABASE'] == 'POSTGRESQL'
   require 'pg'
 else
-  require "jdbc/sqlite3" if RUBY_ENGINE == 'jruby'
-  require "sqlite3" if RUBY_ENGINE == 'ruby'
+  require "sqlite3"
 end
+
+ISOLATION_LEVEL_FIBER = if ENV["ISOLATION_LEVEL_FIBER"]
+  ActiveSupport::IsolatedExecutionState.isolation_level = :fiber
+  puts "ActiveSupport::IsolatedExecutionState: #{ActiveSupport::IsolatedExecutionState.isolation_level}"
+  true
+else
+  false
+end
+
+# Generator specs write apps here. Each parallel worker gets its own directory.
+GENERATOR_TMP_DIR = File.expand_path("../tmp#{TEST_ENV_SUFFIX}", __dir__)
 
 require_relative "generators/base_generator_test"
 require_relative "data"
 
-def with_active_record_log
+def with_active_record_log(colorize: true)
   io = StringIO.new
   prev_logger = ActiveRecord::Base.logger
   ActiveRecord::Base.logger = Logger.new(io)
-  yield
-  io.string
+  # Work aroudn .logger = ... issue on Rails main
+  # https://github.com/rails/rails/issues/56230
+  if ActiveSupport.respond_to?(:event_reporter)
+    ActiveSupport.event_reporter.with_debug do
+      yield
+    end
+  else
+    yield
+  end
+  str = io.string
+  if !colorize
+    str.gsub!(/\e\[([;\d]+)?m/, '')
+  end
+  str
 ensure
   ActiveRecord::Base.logger = prev_logger
+end
+
+if ActiveSupport.respond_to?(:test_order=)
+  ActiveSupport.test_order = :random
 end

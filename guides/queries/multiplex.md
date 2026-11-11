@@ -1,18 +1,10 @@
----
-title: Multiplex
-layout: guide
-doc_stub: false
-search: true
-section: Queries
-desc: Run multiple queries concurrently
-index: 10
----
+# Multiplex
 
-Some clients may send _several_ queries to the server at once (for example, [Apollo Client's query batching](https://www.apollographql.com/docs/react/api/link/apollo-link-batch-http/)). You can execute them concurrently with {{ "Schema#multiplex" | api_doc }}.
+Some clients may send _several_ queries to the server at once (for example, [Apollo Client's query batching](https://www.apollographql.com/docs/react/api/link/apollo-link-batch-http/)). You can execute them concurrently with [Schema.multiplex](rdoc-ref:GraphQL::Schema.multiplex).
 
 Multiplex runs have their own context, analyzers and instrumentation.
 
-__NOTE:__ As an implementation detail, _all_ queries are run inside multiplexes. That is, a stand-alone query is executed as a "multiplex of one", so instrumentation and multiplex analyzers and instrumentation _will_ apply to standalone queries run with `MySchema.execute(...)`.
+__NOTE:__ As an implementation detail, _all_ queries run inside multiplexes. That is, a stand-alone query is executed as a "multiplex of one", so instrumentation and multiplex analyzers and tracers _will_ apply to standalone queries run with `MySchema.execute(...)`.
 
 ## Concurrent Execution
 
@@ -41,7 +33,7 @@ queries = [
 ]
 ```
 
-Then, pass them to `Schema#multiplex`:
+Then, pass them to `Schema.multiplex`:
 
 ```ruby
 results = MySchema.multiplex(queries)
@@ -84,11 +76,11 @@ end
 
 ## Validation and Error Handling
 
-Each query is validated and {% internal_link "analyzed","/queries/ast_analysis" %} independently. The `results` array may include a mix of successful results and failed results
+Each query is validated and [analyzed](/queries/ast_analysis) independently. The `results` array may include a mix of successful results and failed results.
 
 ## Multiplex-Level Context
 
-You can add values to {{ "Execution::Multiplex#context" | api_doc }} by providing a `context:` hash:
+You can add values to `Execution::Multiplex#context` by providing a `context:` hash:
 
 ```ruby
 MySchema.multiplex(queries, context: { current_user: current_user })
@@ -107,26 +99,24 @@ class MySchema < GraphQL::Schema
 end
 ```
 
-The API is the same as {% internal_link "query analyzers","/queries/ast_analysis#analyzing-multiplexes" %}.
+The API is the same as [query analyzers](/queries/ast_analysis#analyzing-multiplexes).
 
-Multiplex analyzers may return {{ "AnalysisError" | api_doc }} to halt execution of the whole multiplex.
+Multiplex analyzers may return [GraphQL::AnalysisError](rdoc-ref:GraphQL::AnalysisError) to halt execution of the whole multiplex.
 
-## Multiplex Instrumentation
+## Multiplex Tracing
 
-You can add hooks for each multiplex run with multiplex instrumentation.
+You can add hooks for each multiplex run with [trace modules](/queries/tracing).
 
-An instrumenter must implement `.before_multiplex(multiplex)` and `.after_multiplex(multiplex)`. Then, it can be mounted with `instrument(:multiplex, MyMultiplexAnalyzer)`. See {{ "Execution::Multiplex" | api_doc }} for available methods.
+The trace module may implement `def execute_multiplex(multiplex:)` which calls `super` to allow the multiplex to execute. See `Execution::Multiplex` for available methods.
 
 For example:
 
 ```ruby
 # Count how many queries are in the multiplex run:
 module MultiplexCounter
-  def self.before_multiplex(multiplex)
+  def execute_multiplex(multiplex:)
     Rails.logger.info("Multiplex size: #{multiplex.queries.length}")
-  end
-
-  def self.after_multiplex(multiplex)
+    super
   end
 end
 
@@ -134,8 +124,8 @@ end
 
 class MySchema < GraphQL::Schema
   # ...
-  instrument(:multiplex, MultiplexCounter)
+  trace_with(MultiplexCounter )
 end
 ```
 
-Now, `MultiplexCounter.before_multiplex` will be called before each multiplex and `.after_multiplex` will run after each multiplex.
+Now, `MultiplexCounter#execute_multiplex` will be called for each execution, logging the size of each multiplex.

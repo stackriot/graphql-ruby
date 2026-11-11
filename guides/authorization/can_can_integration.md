@@ -1,13 +1,4 @@
----
-layout: guide
-search: true
-section: Authorization
-title: CanCan Integration
-desc: Hook up GraphQL to CanCan abilities
-index: 4
-pro: true
----
-
+# CanCan Integration
 
 [GraphQL::Pro](https://graphql.pro) includes an integration for powering GraphQL authorization with [CanCan](https://github.com/CanCanCommunity/cancancan).
 
@@ -39,14 +30,15 @@ context = {
 MySchema.execute(..., context: context)
 ```
 
-And read on about the different features of the integration:
+### Rails Generator
 
-- [Authorizing Objects](#authorizing-objects)
-- [Scoping Lists and Connections](#scopes)
-- [Authorizing Fields](#authorizing-fields)
-- [Authorizing Arguments](#authorizing-arguments)
-- [Authorizing Mutations](#authorizing-mutations)
-- [Custom Abilities Class](#custom-abilities-class)
+If your schema files follow the same convention as `rails generate graphql:install`, then you can install the CanCan integration with a Rails generator:
+
+```bash
+$ rails generate graphql:cancan:install
+```
+
+This will insert all the necessary `include ...`s described below. Alternatively, check the docs below to mix in `CanCanIntegration`'s modules.
 
 ## Authorizing Objects
 
@@ -81,13 +73,13 @@ end
 
 ### Handling Unauthorized Objects
 
-When any CanCan check returns `false`, the unauthorized object is passed to {{ "Schema.unauthorized_object" | api_doc }}, as described in {% internal_link "Handling unauthorized objects", "/authorization/authorization#handling-unauthorized-objects" %}.
+When any CanCan check returns `false`, the unauthorized object is passed to [Schema.unauthorized_object](rdoc-ref:GraphQL::Schema.unauthorized_object), as described in [Handling unauthorized objects](/authorization/authorization#handling-unauthorized-objects).
 
 ## Scopes
 
 #### ActiveRecord::Relation
 
-The CanCan integration adds [CanCan's `.accessible_by`](https://github.com/cancancommunity/cancancan/wiki/Fetching-Records) to GraphQL-Ruby's {% internal_link "list scoping", "/authorization/scoping" %}
+The CanCan integration adds [CanCan's `.accessible_by`](https://github.com/cancancommunity/cancancan/wiki/Fetching-Records) to GraphQL-Ruby's [list scoping](/authorization/scoping)
 
 To scope lists of interface or union type, include the integration in your base union class and base interface module _and_ set a base `can_can_action`, if desired:
 
@@ -158,7 +150,7 @@ Then, you can add `can_can_action:` options to your fields:
 class Types::JobPosting < Types::BaseObject
   # Only allow `can :review_applications, JobPosting` users
   # to see who has applied
-  field :applicants, [Types::User], null: true,
+  field :applicants, [Types::User],
     can_can_action: :review_applicants
 end
 ```
@@ -171,7 +163,7 @@ CanCan 3.0 added attribute-level authorization ([pull request](https://github.co
 
 ```ruby
 # This will call `.can?(:read, user, :email_address)`
-field :email_address, String, null: true,
+field :email_address, String,
   can_can_action: :read,
   can_can_attribute: :email_address
 ```
@@ -192,7 +184,7 @@ class Types::BaseField
 end
 ```
 
-(See {{ "GraphQL::Schema::Field" | api_doc }} for the different values available for defaults.)
+(See [GraphQL::Schema::Field](rdoc-ref:GraphQL::Schema::Field) for the different values available for defaults.)
 
 ### Providing a Custom CanCan Subject
 
@@ -203,7 +195,6 @@ field :users, Types::User.connection_type, null: false,
   can_can_action: :manage,
   # `:all` will be used instead of `object` (which is `nil`)
   can_can_subject: :all
-end
 ```
 
 The configuration above will call `can?(:manage, :all)` whenever that field is requested.
@@ -241,7 +232,7 @@ Now, arguments accept a `can_can_action:` option, for example:
 
 ```ruby
 class Types::Company < Types::BaseObject
-  field :employees, Types::Employee.connection_type, null: true do
+  field :employees, Types::Employee.connection_type do
     # Only admins can filter employees by email:
     argument :email, String, required: false, can_can_action: :admin
   end
@@ -311,7 +302,7 @@ Beyond the normal [object reading permissions](#authorizing-objects), you can ad
 
 ```ruby
 class Mutations::FireEmployee < Mutations::BaseMutation
-  argument :employee_id, ID, required: true,
+  argument :employee_id, ID,
     loads: Types::Employee,
     can_can_action: :supervise,
 end
@@ -339,11 +330,11 @@ The method is called with:
 
 Since it's a mutation method, you can also access `context` in that method.
 
-Whatever that method returns will be treated as an early return value for the mutation, so for example, you could return {% internal_link "errors as data", "/mutations/mutation_errors" %}:
+Whatever that method returns will be treated as an early return value for the mutation, so for example, you could return [errors as data](/mutations/mutation_errors):
 
 ```ruby
 class Mutations::BaseMutation < GraphQL::Schema::RelayClassicMutation
-  field :errors, [String], null: true
+  field :errors, [String]
 
   def unauthorized_by_can_can(owner, value)
     # Return errors as data:
@@ -351,6 +342,21 @@ class Mutations::BaseMutation < GraphQL::Schema::RelayClassicMutation
   end
 end
 ```
+
+## Authorizing Resolvers
+
+Resolvers are authorized just like [mutations](#authorizing-mutations), and require similar setup:
+
+```ruby
+# app/graphql/resolvers/base_resolver.rb
+class Resolvers::BaseResolver < GraphQL::Schema::Resolver
+  include GraphQL::Pro::CanCanIntegration::ResolverIntegration
+  argument_class BaseArgument
+  # can_can_action(nil) # to disable authorization by default
+end
+```
+
+Beyond that, see [Authorizing Mutations](#authorizing-mutations) above for further details.
 
 ## Custom Abilities Class
 

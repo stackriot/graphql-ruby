@@ -1,13 +1,18 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   class Schema
-    # Subclasses of this can influence how {GraphQL::Execution::Interpreter} runs queries.
+    # Subclasses of this can influence how [GraphQL::Execution::Interpreter](rdoc-ref:GraphQL::Execution::Interpreter) runs queries.
     #
-    # - {.include?}: if it returns `false`, the field or fragment will be skipped altogether, as if it were absent
-    # - {.resolve}: Wraps field resolution (so it should call `yield` to continue)
+    # - [.include?](rdoc-ref:.include?): if it returns `false`, the field or fragment will be skipped altogether, as if it were absent
+    # - [.resolve](rdoc-ref:.resolve): Wraps field resolution (so it should call `yield` to continue)
     class Directive < GraphQL::Schema::Member
       extend GraphQL::Schema::Member::HasArguments
+      extend GraphQL::Schema::Member::HasArguments::HasDirectiveArguments
+      extend GraphQL::Schema::Member::HasValidators
+
       class << self
         # Directives aren't types, they don't have kinds.
         undef_method :kind
@@ -20,23 +25,31 @@ module GraphQL
         # but downcase the first letter.
         def default_graphql_name
           @default_graphql_name ||= begin
-            camelized_name = super
+            camelized_name = super.dup
             camelized_name[0] = camelized_name[0].downcase
-            camelized_name
+            -camelized_name
           end
         end
 
         def locations(*new_locations)
-          if new_locations.any?
+          if !new_locations.empty?
+            is_runtime = false #: bool
             new_locations.each do |new_loc|
-              if !LOCATIONS.include?(new_loc.to_sym)
+              loc_sym = new_loc.to_sym
+              if !LOCATIONS.include?(loc_sym)
                 raise ArgumentError, "#{self} (#{self.graphql_name}) has an invalid directive location: `locations #{new_loc}` "
               end
+              is_runtime ||= RUNTIME_LOCATIONS.include?(loc_sym)
             end
             @locations = new_locations
+            @is_runtime = is_runtime
           else
             @locations ||= (superclass.respond_to?(:locations) ? superclass.locations : [])
           end
+        end
+
+        def runtime?
+          @is_runtime
         end
 
         def default_directive(new_default_directive = nil)
@@ -53,30 +66,12 @@ module GraphQL
           default_directive
         end
 
-        def to_graphql
-          defn = GraphQL::Directive.new
-          defn.name = self.graphql_name
-          defn.description = self.description
-          defn.locations = self.locations
-          defn.default_directive = self.default_directive
-          defn.ast_node = ast_node
-          defn.metadata[:type_class] = self
-          arguments.each do |name, arg_defn|
-            arg_graphql = arg_defn.to_graphql
-            defn.arguments[arg_graphql.name] = arg_graphql
-          end
-          # Make a reference to a classic-style Arguments class
-          defn.arguments_class = GraphQL::Query::Arguments.construct_arguments_class(defn)
-
-          defn
-        end
-
         # If false, this part of the query won't be evaluated
         def include?(_object, arguments, context)
           static_include?(arguments, context)
         end
 
-        # Determines whether {Execution::Lookahead} considers the field to be selected
+        # Determines whether [Execution::Lookahead](rdoc-ref:Execution::Lookahead) considers the field to be selected
         def static_include?(_arguments, _context)
           true
         end
@@ -84,6 +79,20 @@ module GraphQL
         # Continuing is passed as a block; `yield` to continue
         def resolve(object, arguments, context)
           yield
+        end
+
+        # Continuing is passed as a block, yield to continue.
+        def resolve_each(object, arguments, context)
+          yield
+        end
+
+        def resolve_field(...); end
+        def resolve_fragment_spread(...); end
+        def resolve_inline_fragment(...); end
+        def resolve_operation(...); end
+
+        def validate!(arguments, context)
+          Schema::Validator.validate!(validators, self, context, arguments)
         end
 
         def on_field?
@@ -97,33 +106,129 @@ module GraphQL
         def on_operation?
           locations.include?(QUERY) && locations.include?(MUTATION) && locations.include?(SUBSCRIPTION)
         end
+
+        def repeatable?
+          !!@repeatable
+        end
+
+        def repeatable(new_value)
+          @repeatable = new_value
+        end
+
+        # When this is a Hash, instances with equal, statically coercible arguments reuse the first instance's coerced arguments.
+        # BuildFromDefinition uses this while it builds a schema, then removes it.
+        attr_accessor :coerced_arguments_cache # :nodoc:
+
+        private
+
+        def inherited(subclass)
+          super
+          parent_class = self
+          subclass.class_exec do
+            @default_graphql_name ||= nil
+            @locations = parent_class.locations
+            @is_runtime = parent_class.runtime?
+            @repeatable = false
+            @coerced_arguments_cache = nil
+          end
+        end
       end
 
-      # @return [GraphQL::Schema::Field, GraphQL::Schema::Argument, Class, Module]
+      # **Returns**
+      #
+      # - `GraphQL::Schema::Field, GraphQL::Schema::Argument, Class, Module`
       attr_reader :owner
 
-      # @return [GraphQL::Interpreter::Arguments]
+      # **Returns**
+      #
+      # - `GraphQL::Interpreter::Arguments`
       attr_reader :arguments
+
+      class InvalidArgumentError < GraphQL::Error
+      end
 
       def initialize(owner, **arguments)
         @owner = owner
         assert_valid_owner
+        if (arguments_cache = self.class.coerced_arguments_cache)
+          if !self.class.arguments_statically_coercible?
+            arguments_cache = nil
+          elsif (cached_arguments = arguments_cache[arguments])
+            @arguments = cached_arguments
+            return
+          end
+        end
         # It's be nice if we had the real context here, but we don't. What we _would_ get is:
         # - error handling
         # - lazy resolution
         # Probably, those won't be needed here, since these are configuration arguments,
         # not runtime arguments.
-        @arguments = self.class.coerce_arguments(nil, arguments, Query::NullContext)
+        context = Query::NullContext.instance
+        self.class.all_argument_definitions.each do |arg_defn|
+          keyword = arg_defn.keyword
+          arg_type = arg_defn.type
+          if arguments.key?(keyword)
+            value = arguments[keyword]
+            # This is a Ruby-land value; convert it to graphql for validation
+            graphql_value = begin
+              coerce_value = value
+              if arg_type.list? && (!coerce_value.nil?) && (!coerce_value.is_a?(Array))
+                # When validating inputs, GraphQL accepts a single item
+                # and implicitly converts it to a one-item list.
+                # However, we're using result coercion here to go from Ruby value
+                # to GraphQL value, so it doesn't have that feature.
+                # Keep the GraphQL-type behavior but implement it manually:
+                wrap_type = arg_type
+                while wrap_type.list?
+                  if wrap_type.non_null?
+                    wrap_type = wrap_type.of_type
+                  end
+                  wrap_type = wrap_type.of_type
+                  coerce_value = [coerce_value]
+                end
+              end
+              arg_type.coerce_isolated_result(coerce_value)
+            rescue GraphQL::Schema::Enum::UnresolvedValueError
+              # Let validation handle this
+              value
+            end
+          elsif arg_defn.default_value?
+            value = arg_defn.default_value
+            graphql_value = arg_type.coerce_isolated_result(value) unless value.nil?
+          else
+            value = graphql_value = nil
+          end
+
+          result = arg_type.validate_input(graphql_value, context)
+          if !result.valid?
+            raise InvalidArgumentError, "@#{graphql_name}.#{arg_defn.graphql_name} on #{owner.path} is invalid (#{value.inspect}): #{result.problems.first["explanation"]}"
+          end
+        end
+        self.class.validate!(arguments, context)
+        @arguments = self.class.coerce_arguments(nil, arguments, context)
+        if @arguments.is_a?(GraphQL::ExecutionError)
+          raise @arguments
+        end
+        if arguments_cache
+          arguments_cache[arguments] = @arguments
+        end
+      end
+
+      def graphql_name
+        self.class.graphql_name
       end
 
       LOCATIONS = [
-        QUERY =                  :QUERY,
-        MUTATION =               :MUTATION,
-        SUBSCRIPTION =           :SUBSCRIPTION,
-        FIELD =                  :FIELD,
-        FRAGMENT_DEFINITION =    :FRAGMENT_DEFINITION,
-        FRAGMENT_SPREAD =        :FRAGMENT_SPREAD,
-        INLINE_FRAGMENT =        :INLINE_FRAGMENT,
+        *(RUNTIME_LOCATIONS = [
+          QUERY =                  :QUERY,
+          MUTATION =               :MUTATION,
+          SUBSCRIPTION =           :SUBSCRIPTION,
+          FIELD =                  :FIELD,
+          FRAGMENT_DEFINITION =    :FRAGMENT_DEFINITION,
+          FRAGMENT_SPREAD =        :FRAGMENT_SPREAD,
+          INLINE_FRAGMENT =        :INLINE_FRAGMENT,
+          VARIABLE_DEFINITION =    :VARIABLE_DEFINITION,
+        ]),
         SCHEMA =                 :SCHEMA,
         SCALAR =                 :SCALAR,
         OBJECT =                 :OBJECT,
@@ -157,6 +262,7 @@ module GraphQL
         ENUM_VALUE:               'Location adjacent to an enum value definition.',
         INPUT_OBJECT:             'Location adjacent to an input object type definition.',
         INPUT_FIELD_DEFINITION:   'Location adjacent to an input object field definition.',
+        VARIABLE_DEFINITION:      'Location adjacent to a variable definition.',
       }
 
       private
@@ -176,6 +282,8 @@ module GraphQL
             assert_has_location(SCALAR)
           elsif @owner < GraphQL::Schema
             assert_has_location(SCHEMA)
+          elsif @owner < GraphQL::Schema::Resolver
+            assert_has_location(FIELD_DEFINITION)
           else
             raise "Unexpected directive owner class: #{@owner}"
           end

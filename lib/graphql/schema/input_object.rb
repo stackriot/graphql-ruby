@@ -1,8 +1,9 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   class Schema
     class InputObject < GraphQL::Schema::Member
-      extend GraphQL::Schema::Member::AcceptsDefinition
       extend Forwardable
       extend GraphQL::Schema::Member::HasArguments
       extend GraphQL::Schema::Member::HasArguments::ArgumentObjectLoader
@@ -11,55 +12,43 @@ module GraphQL
 
       include GraphQL::Dig
 
-      # @return [GraphQL::Query::Context] The context for this query
+      # Raised when an InputObject doesn't have any arguments defined and hasn't explicitly opted out of this requirement
+      class ArgumentsAreRequiredError < GraphQL::Error
+        def initialize(input_object_type)
+          message = "Input Object types must have arguments, but #{input_object_type.graphql_name} doesn't have any. Define an argument for this type, remove it from your schema, or add `has_no_arguments(true)` to its definition."
+          super(message)
+        end
+      end
+
+      # **Returns**
+      #
+      # - `GraphQL::Query::Context` — The context for this query
       attr_reader :context
-      # @return [GraphQL::Query::Arguments, GraphQL::Execution::Interpereter::Arguments] The underlying arguments instance
+      # **Returns**
+      #
+      # - `GraphQL::Execution::Interpereter::Arguments` — The underlying arguments instance
       attr_reader :arguments
 
       # Ruby-like hash behaviors, read-only
       def_delegators :@ruby_style_hash, :keys, :values, :each, :map, :any?, :empty?
 
-      def initialize(arguments = nil, ruby_kwargs: nil, context:, defaults_used:)
+      def initialize(arguments, ruby_kwargs:, context:, defaults_used:)
         @context = context
-        if ruby_kwargs
-          @ruby_style_hash = ruby_kwargs
-          @arguments = arguments
-        else
-          @arguments = self.class.arguments_class.new(arguments, context: context, defaults_used: defaults_used)
-          # Symbolized, underscored hash:
-          @ruby_style_hash = @arguments.to_kwargs
-        end
+        @ruby_style_hash = ruby_kwargs
+        @arguments = arguments
         # Apply prepares, not great to have it duplicated here.
-        maybe_lazies = []
-        self.class.arguments.each_value do |arg_defn|
+        arg_defns = context ? context.types.arguments(self.class) : self.class.arguments(context).each_value
+        arg_defns.each do |arg_defn|
           ruby_kwargs_key = arg_defn.keyword
-
           if @ruby_style_hash.key?(ruby_kwargs_key)
-            loads = arg_defn.loads
-            # Resolvers do this loading themselves;
-            # With the interpreter, it's done during `coerce_arguments`
-            if loads && !arg_defn.from_resolver? && !context.interpreter?
-              value = @ruby_style_hash[ruby_kwargs_key]
-              loaded_value = if arg_defn.type.list?
-                value.map { |val| load_application_object(arg_defn, loads, val, context) }
-              else
-                load_application_object(arg_defn, loads, value, context)
-              end
-              maybe_lazies << context.schema.after_lazy(loaded_value) do |loaded_value|
-                overwrite_argument(ruby_kwargs_key, loaded_value)
-              end
-            end
-
             # Weirdly, procs are applied during coercion, but not methods.
             # Probably because these methods require a `self`.
-            if arg_defn.prepare.is_a?(Symbol) || context.nil? || !context.interpreter?
-              prepared_value = arg_defn.prepare_value(self, @ruby_style_hash[ruby_kwargs_key])
+            if arg_defn.prepare.is_a?(Symbol) || context.nil?
+              prepared_value = arg_defn.prepare_value(self, @ruby_style_hash[ruby_kwargs_key], context: context)
               overwrite_argument(ruby_kwargs_key, prepared_value)
             end
           end
         end
-
-        @maybe_lazies = maybe_lazies
       end
 
       def to_h
@@ -70,17 +59,18 @@ module GraphQL
         to_h
       end
 
-      def prepare
-        if context
-          context.schema.after_any_lazies(@maybe_lazies) do
-            object = context[:current_object]
-            # Pass this object's class with `as` so that messages are rendered correctly from inherited validators
-            Schema::Validator.validate!(self.class.validators, object, context, @ruby_style_hash, as: self.class)
-            self
-          end
+      def deconstruct_keys(keys = nil)
+        if keys.nil?
+          @ruby_style_hash
         else
-          self
+          new_h = {}
+          keys.each { |k| @ruby_style_hash.key?(k) && new_h[k] = @ruby_style_hash[k] }
+          new_h
         end
+      end
+
+      def prepare
+        self
       end
 
       def unwrap_value(value)
@@ -88,8 +78,8 @@ module GraphQL
         when Array
           value.map { |item| unwrap_value(item) }
         when Hash
-          value.reduce({}) do |h, (key, value)|
-            h.merge!(key => unwrap_value(value))
+          value.reduce({}) do |h, (key, nested_value)|
+            h.merge!(key => unwrap_value(nested_value))
           end
         when InputObject
           value.to_h
@@ -100,7 +90,13 @@ module GraphQL
 
       # Lookup a key on this object, it accepts new-style underscored symbols
       # Or old-style camelized identifiers.
-      # @param key [Symbol, String]
+      #
+      # **Parameters**
+      #
+      # - `key` (`Symbol, String`)
+      #
+      # :call-seq:
+      #   [](Symbol | String key)
       def [](key)
         if @ruby_style_hash.key?(key)
           @ruby_style_hash[key]
@@ -120,82 +116,128 @@ module GraphQL
         @ruby_style_hash.dup
       end
 
-      class << self
-        # @return [Class<GraphQL::Arguments>]
-        attr_accessor :arguments_class
+      def validate_for(context) # :nodoc:
+        object = context[:current_object]
+        # Pass this object's class with `as` so that messages are rendered correctly from inherited validators
+        Schema::Validator.validate!(self.class.validators, object, context, @ruby_style_hash, as: self.class)
+        nil
+      end
 
-        def argument(*args, **kwargs, &block)
-          argument_defn = super(*args, **kwargs, &block)
-          # Add a method access
-          method_name = argument_defn.keyword
-          class_eval <<-RUBY, __FILE__, __LINE__
-            def #{method_name}
-              self[#{method_name.inspect}]
-            end
-          RUBY
+      class << self
+        def authorizes?(ctx)
+          self.method(:authorized?).owner != GraphQL::Schema::InputObject
         end
 
-        def to_graphql
-          type_defn = GraphQL::InputObjectType.new
-          type_defn.name = graphql_name
-          type_defn.description = description
-          type_defn.metadata[:type_class] = self
-          type_defn.mutation = mutation
-          type_defn.ast_node = ast_node
-          arguments.each do |name, arg|
-            type_defn.arguments[arg.graphql_definition.name] = arg.graphql_definition
+        def authorized?(obj, value, ctx)
+          # Authorize each argument (but this doesn't apply if `prepare` is implemented):
+          if value.respond_to?(:key?)
+            ctx.types.arguments(self).each do |input_obj_arg|
+              if value.key?(input_obj_arg.keyword) &&
+                !input_obj_arg.authorized?(obj, value[input_obj_arg.keyword], ctx)
+                return false
+              end
+            end
           end
-          # Make a reference to a classic-style Arguments class
-          self.arguments_class = GraphQL::Query::Arguments.construct_arguments_class(type_defn)
-          # But use this InputObject class at runtime
-          type_defn.arguments_class = self
-          type_defn
+          # It didn't early-return false:
+          true
+        end
+
+        def one_of
+          if !one_of?
+            if all_argument_definitions.any? { |arg| arg.type.non_null? }
+              raise ArgumentError, "`one_of` may not be used with required arguments -- add `required: false` to argument definitions to use `one_of`"
+            end
+            directive(GraphQL::Schema::Directive::OneOf)
+          end
+        end
+
+        def one_of?
+          false # Re-defined when `OneOf` is added
+        end
+
+        def argument(*args, **kwargs, &block)
+          args = args #: untyped
+          argument_defn = super(*args, **kwargs, &block)
+          if one_of?
+            if argument_defn.type.non_null?
+              raise ArgumentError, "Argument '#{argument_defn.path}' must be nullable because it is part of a OneOf type, add `required: false`."
+            end
+            if argument_defn.default_value?
+              raise ArgumentError, "Argument '#{argument_defn.path}' cannot have a default value because it is part of a OneOf type, remove `default_value: ...`."
+            end
+          end
+          # Add a method access
+          suppress_redefinition_warning do
+            define_accessor_method(argument_defn.keyword)
+          end
+          argument_defn
         end
 
         def kind
           GraphQL::TypeKinds::INPUT_OBJECT
         end
 
-        # @api private
-        INVALID_OBJECT_MESSAGE = "Expected %{object} to be a key-value object responding to `to_h` or `to_unsafe_h`."
+        # :nodoc:
+        INVALID_OBJECT_MESSAGE = "Expected %{object} to be a key-value object."
 
-        def validate_non_null_input(input, ctx)
-          result = GraphQL::Query::InputValidationResult.new
-
-          warden = ctx.warden
+        def validate_non_null_input(input, ctx, max_errors: nil)
+          types = ctx.types
 
           if input.is_a?(Array)
-            result.add_problem(INVALID_OBJECT_MESSAGE % { object: JSON.generate(input, quirks_mode: true) })
-            return result
+            return GraphQL::Query::InputValidationResult.from_problem(INVALID_OBJECT_MESSAGE % { object: JSON.generate(input) })
           end
 
           if !(input.respond_to?(:to_h) || input.respond_to?(:to_unsafe_h))
             # We're not sure it'll act like a hash, so reject it:
-            result.add_problem(INVALID_OBJECT_MESSAGE % { object: JSON.generate(input, quirks_mode: true) })
-            return result
+            return GraphQL::Query::InputValidationResult.from_problem(INVALID_OBJECT_MESSAGE % { object: JSON.generate(input) })
           end
 
-          # Inject missing required arguments
-          missing_required_inputs = self.arguments.reduce({}) do |m, (argument_name, argument)|
-            if !input.key?(argument_name) && argument.type.non_null? && warden.get_argument(self, argument_name)
-              m[argument_name] = nil
+
+          result = nil #: GraphQL::Query::InputValidationResult?
+
+
+          input.each do |argument_name, value|
+            argument = types.argument(self, argument_name)
+            if argument.nil? && ctx.is_a?(Query::NullContext) && argument_name.is_a?(Symbol)
+              # Validating definition directive arguments which come in as Symbols
+              argument = types.arguments(self).find { |arg| arg.keyword == argument_name }
             end
-
-            m
-          end
-
-
-          [input, missing_required_inputs].each do |args_to_validate|
-            args_to_validate.each do |argument_name, value|
-              argument = warden.get_argument(self, argument_name)
-              # Items in the input that are unexpected
-              unless argument
-                result.add_problem("Field is not defined on #{self.graphql_name}", [argument_name])
-                next
-              end
+            # Items in the input that are unexpected
+            if argument.nil?
+              result ||= Query::InputValidationResult.new
+              result.add_problem("Field is not defined on #{self.graphql_name}", [argument_name])
+            else
               # Items in the input that are expected, but have invalid values
               argument_result = argument.type.validate_input(value, ctx)
-              result.merge_result!(argument_name, argument_result) unless argument_result.valid?
+              if !argument_result.valid?
+                result ||= Query::InputValidationResult.new
+                result.merge_result!(argument_name, argument_result)
+              end
+            end
+          end
+
+          # Check for missing non-null arguments
+          ctx.types.arguments(self).each do |argument|
+            if !input.key?(argument.graphql_name) && argument.type.non_null? && !argument.default_value?
+              result ||= Query::InputValidationResult.new
+              argument_result = argument.type.validate_input(nil, ctx)
+              if !argument_result.valid?
+                result.merge_result!(argument.graphql_name, argument_result)
+              end
+            end
+          end
+
+          if one_of?
+            if input.size == 1
+              input.each do |name, value|
+                if value.nil?
+                  result ||= Query::InputValidationResult.new
+                  result.add_problem("'#{graphql_name}' requires exactly one argument, but '#{name}' was `null`.")
+                end
+              end
+            else
+              result ||= Query::InputValidationResult.new
+              result.add_problem("'#{graphql_name}' requires exactly one argument, but #{input.size} were provided.")
             end
           end
 
@@ -209,12 +251,11 @@ module GraphQL
 
           arguments = coerce_arguments(nil, value, ctx)
 
-          ctx.schema.after_lazy(arguments) do |resolved_arguments|
+          ctx.query.after_lazy(arguments) do |resolved_arguments|
             if resolved_arguments.is_a?(GraphQL::Error)
               raise resolved_arguments
             else
-              input_obj_instance = self.new(resolved_arguments, ruby_kwargs: resolved_arguments.keyword_arguments, context: ctx, defaults_used: nil)
-              input_obj_instance.prepare
+              self.new(resolved_arguments, ruby_kwargs: resolved_arguments.keyword_arguments, context: ctx, defaults_used: nil)
             end
           end
         end
@@ -227,7 +268,7 @@ module GraphQL
 
           result = {}
 
-          arguments.each do |input_key, input_field_defn|
+          arguments(ctx).each do |input_key, input_field_defn|
             input_value = value[input_key]
             if value.key?(input_key)
               result[input_key] = if input_value.nil?
@@ -239,6 +280,57 @@ module GraphQL
           end
 
           result
+        end
+
+        # **Parameters**
+        #
+        # - `new_has_no_arguments` (`Boolean`) — Call with `true` to make this InputObject type ignore the requirement to have any defined arguments.
+        #
+        # **Returns**
+        #
+        # - `void`
+        #
+        # :call-seq:
+        #   has_no_arguments(bool new_has_no_arguments) -> void
+        def has_no_arguments(new_has_no_arguments)
+          @has_no_arguments = new_has_no_arguments
+          nil
+        end
+
+        # **Returns**
+        #
+        # - `Boolean` — `true` if `has_no_arguments(true)` was configued
+        #
+        # :call-seq:
+        #   has_no_arguments?() -> bool
+        def has_no_arguments?
+          @has_no_arguments
+        end
+
+        def arguments(context = GraphQL::Query::NullContext.instance, require_defined_arguments = true)
+          if require_defined_arguments && !has_no_arguments? && !any_arguments?
+            warn(GraphQL::Schema::InputObject::ArgumentsAreRequiredError.new(self).message + "\n\nThis will raise an error in a future GraphQL-Ruby version.")
+          end
+          super(context, false)
+        end
+
+        private
+
+        # Suppress redefinition warning for objectId arguments
+        def suppress_redefinition_warning
+          verbose = $VERBOSE
+          $VERBOSE = nil
+          yield
+        ensure
+          $VERBOSE = verbose
+        end
+
+        def define_accessor_method(method_name)
+          define_method(method_name) {
+            #: self as GraphQL::Schema::InputObject
+            self[method_name]
+          }
+          alias_method(method_name, method_name)
         end
       end
 

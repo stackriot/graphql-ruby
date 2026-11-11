@@ -1,23 +1,13 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Fields
-title: Resolvers
-desc: Reusable, extendable resolution logic for complex fields
-index: 2
-redirect_from:
-  - /fields/functions
----
+# Resolvers
 
-A {{ "GraphQL::Schema::Resolver" | api_doc }} is a container for field signature and resolution logic. It can be attached to a field with the `resolver:` keyword:
+A [GraphQL::Schema::Resolver](rdoc-ref:GraphQL::Schema::Resolver) is a container for field signature and resolution logic. It can be attached to a field with the `resolver:` keyword:
 
 ```ruby
 # Use the resolver class to execute this field
 field :pending_orders, resolver: PendingOrders
 ```
 
-Under the hood, {{ "GraphQL::Schema::Mutation" | api_doc }} is a specialized subclass of `Resolver`.
+Under the hood, [GraphQL::Schema::Mutation](rdoc-ref:GraphQL::Schema::Mutation) is a specialized subclass of `Resolver`.
 
 ## First, ask yourself ...
 
@@ -42,16 +32,16 @@ end
 
 ```ruby
 # Generate a field which returns a filtered, sorted list of items
-def self.items_field(name, override_options)
+def self.items_field(name, override_options, &block)
   # Prepare options
   default_field_options = { type: [Types::Item], null: false }
   field_options = default_field_options.merge(override_options)
   # Create the field
-  field(name, field_options) do
+  field(name, **field_options) do
     argument :order_by, Types::ItemOrder, required: false
     argument :category, Types::ItemCategory, required: false
     # Allow an override block to add more arguments
-    yield self if block_given?
+    instance_eval(&block) if block_given?
   end
 end
 
@@ -88,7 +78,7 @@ class Types::User < BaseObject
 end
 ```
 
-- If the module approach looks good to you, also consider {% internal_link "Interfaces", "/type_definitions/interfaces" %}. They also share behavior between objects (since they're just modules that get included, after all), and they expose that commonality to clients via introspection.
+- If the module approach looks good to you, also consider [Interfaces](/type_definitions/interfaces). They also share behavior between objects (since they're just modules that get included, after all), and they expose that commonality to clients via introspection.
 
 ## When do you really need a resolver?
 
@@ -99,24 +89,13 @@ So, if there are other, better options, why does `Resolver` exist? Here are a fe
 
 ## Using `resolver`
 
-To add resolvers to your project, make a base class:
-
-```ruby
-# app/graphql/resolvers/base.rb
-module Resolvers
-  class Base < GraphQL::Schema::Resolver
-    # if you have a custom argument class, you can attach it:
-    argument_class Arguments::Base
-  end
-end
-```
-
-Then, extend it as needed:
+Use the base resolver class:
 
 ```ruby
 module Resolvers
-  class RecommendedItems < Resolvers::Base
+  class RecommendedItems < BaseResolver
     type [Types::Item], null: false
+    description "Items this user might like"
 
     argument :order_by, Types::ItemOrder, required: false
     argument :category, Types::ItemCategory, required: false
@@ -140,9 +119,7 @@ And attach it to your field:
 
 ```ruby
 class Types::User < Types::BaseObject
-  field :recommended_items,
-    resolver: Resolvers::RecommendedItems,
-    description: "Items this user might like"
+  field :recommended_items, resolver: Resolvers::RecommendedItems
 end
 ```
 
@@ -173,7 +150,7 @@ end
 # app/graphql/resolvers/tasks_resolver.rb
 
 module Resolvers
-  class TasksResolver < GraphQL::Schema::Resolver
+  class TasksResolver < BaseResolver
     type [Types::TaskType], null: false
 
     def resolve
@@ -189,7 +166,7 @@ A simple solution is to express the type as a string in the resolver:
 
 ```ruby
 module Resolvers
-  class TasksResolver < GraphQL::Schema::Resolver
+  class TasksResolver < BaseResolver
     type "[Types::TaskType]", null: false
 
     def resolve

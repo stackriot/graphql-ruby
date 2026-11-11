@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   module Types
     # An untyped JSON scalar that maps to Ruby hashes, arrays, strings, integers, floats, booleans and nils.

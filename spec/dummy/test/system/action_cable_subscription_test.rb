@@ -2,6 +2,9 @@
 require "application_system_test_case"
 
 class ActionCableSubscriptionsTest < ApplicationSystemTestCase
+  setup do
+    ActionCable.server.config.logger = Logger.new(STDOUT)
+  end
   # This test covers a lot of ground!
   test "it handles subscriptions" do
     # Load the page and let the subscriptions happen
@@ -67,8 +70,9 @@ class ActionCableSubscriptionsTest < ApplicationSystemTestCase
 
 
   test "it only re-runs queries once for subscriptions with matching fingerprints" do
+    GraphqlChannel::CounterIncremented.reset_call_count
     visit "/"
-    using_wait_time 30 do
+    using_wait_time 10 do
       sleep 1
       # Make 3 subscriptions to the same payload
       click_on("Subscribe with fingerprint 1")
@@ -122,6 +126,50 @@ class ActionCableSubscriptionsTest < ApplicationSystemTestCase
       # But this one was unsubscribed:
       refute_selector "#fingerprint-updates-1-update-1-value-#{fingerprint_1_value_2 + 1}"
       refute_selector "#fingerprint-updates-1-update-1-value-#{fingerprint_1_value_2 + 2}"
+    end
+  end
+
+  test "it unsubscribes from the server" do
+    GraphqlChannel::CounterIncremented.reset_call_count
+    visit "/"
+    using_wait_time 10 do
+      sleep 1
+      # Establish the connection
+      click_on("Subscribe with fingerprint 1")
+      debug_assert_selector "#fingerprint-updates-1-connected-1"
+      # Trigger once
+      click_on("Trigger with fingerprint 1")
+      debug_assert_selector "[id^='fingerprint-updates-1-update-1-value-']"
+
+      # Server unsubscribe
+      click_on("Server-side unsubscribe with fingerprint 1")
+      # Subsequent updates should fail
+      click_on("Trigger with fingerprint 1")
+      refute_selector "[id^='fingerprint-updates-1-update-2-value-']"
+
+      # The client has only 2 connections (from the initial 2)
+      assert_text "Remaining ActionCable subscriptions: 2"
+    end
+  end
+
+  test "it unsubscribes with a message" do
+    GraphqlChannel::CounterIncremented.reset_call_count
+    visit "/"
+    using_wait_time 10 do
+      sleep 1
+      # Establish the connection
+      click_on("Subscribe with fingerprint 1")
+      debug_assert_selector "#fingerprint-updates-1-connected-1"
+      # Trigger once
+      click_on("Trigger with fingerprint 1")
+      debug_assert_selector "[id^='fingerprint-updates-1-update-1-value-']"
+
+      # Server unsubscribe
+      click_on("Unsubscribe with message with fingerprint 1")
+      # Magic value from unsubscribe hook:
+      debug_assert_selector "#fingerprint-updates-1-update-1-value-9999"
+      # The client has only 2 connections (from the initial 2)
+      assert_text "Remaining ActionCable subscriptions: 2"
     end
   end
 end

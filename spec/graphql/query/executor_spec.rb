@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 require "spec_helper"
 
-describe GraphQL::Query::Executor do
+describe "GraphQL::Query::Executor" do
   let(:operation_name) { nil }
   let(:schema) { Dummy::Schema }
   let(:variables) { {"cheeseId" => 2} }
@@ -58,7 +58,7 @@ describe GraphQL::Query::Executor do
     end
   end
 
-  describe "operation and fragment defintions of the same name" do
+  describe "operation and fragment definitions of the same name" do
     let(:query_string) { %|
       query Cheese { cheese(id: 1) { ...Cheese } }
       query MoreCheese { cheese(id: 2) { ...Cheese } }
@@ -147,7 +147,9 @@ describe GraphQL::Query::Executor do
           "data" => { "cow" => nil },
           "errors" => [
             {
-              "message" => "Cannot return null for non-nullable field Cow.cantBeNullButIs"
+              "message" => "Cannot return null for non-nullable field Cow.cantBeNullButIs",
+              "path" => ["cow", "cantBeNullButIs"],
+              "locations" => [{ "line" => 1, "column" => 28 }]
             }
           ]
         }

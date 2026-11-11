@@ -1,14 +1,17 @@
 import PusherLink from "../PusherLink"
 import { parse } from "graphql"
 import Pusher from "pusher-js"
-import { Operation } from "@apollo/client/core"
+import { ApolloLink } from "@apollo/client/link"
 import pako from 'pako'
+import { Observable } from "rxjs"
+
+type Operation = ApolloLink.Operation
 
 type MockChannel = {
   bind: (action: string, handler: Function) => void,
 }
 
-describe("ActionCableLink", () => {
+describe("PusherLink", () => {
   var channelName = "abcd-efgh"
   var log: any[]
   var pusher: any
@@ -79,6 +82,53 @@ describe("ActionCableLink", () => {
     } as unknown) as Operation
   })
 
+  it("forwards errors to error handlers", () => {
+    let passedErrorHandler: Function = () => {}
+    const forwardFunction = function(_operation: Operation): any {
+      return new Observable((observer) => {
+        passedErrorHandler = (err: any) => {
+          observer.error(err)
+        }
+      })
+    }
+
+    var observable = link.request(operation, forwardFunction)
+
+    let errorHandlerWasCalled = false
+    function createdErrorHandler(_err: Error) {
+      errorHandlerWasCalled = true
+    }
+
+    observable.subscribe({
+      next: function(_result: any) {},
+      error: createdErrorHandler,
+    })
+
+    passedErrorHandler(new Error)
+
+    expect(errorHandlerWasCalled).toBe(true)
+  })
+
+  it("doesn't call the link request's `complete` handler because otherwise Apollo would clean up subscriptions", () => {
+    let passedComplete: Function = () => {}
+
+    var observable = link.request(operation, function(_operation: Operation): any {
+      return {
+        subscribe: (options: { next: Function, error: Function, complete: Function }): void => {
+          passedComplete = options.complete
+          {}
+        }
+      }
+    })
+
+    observable.subscribe(function(result: any) {
+      log.push(["received", result])
+    }, null, function() { log.push(["completed"])})
+
+    expect(log).toEqual([])
+    expect(passedComplete).toBeUndefined()
+  })
+
   it("delegates to pusher", () => {
     var requestFinished: Function = () => {}
 
@@ -96,7 +146,7 @@ describe("ActionCableLink", () => {
     })
 
     // Pretend the HTTP link finished
-    requestFinished({})
+    requestFinished({ data: "initial payload" })
 
     pusher.trigger(channelName, "update", {
       result: {
@@ -114,13 +164,14 @@ describe("ActionCableLink", () => {
 
     expect(log).toEqual([
       ["subscribe", "abcd-efgh"],
+      ["received", { data: "initial payload"}],
       ["received", { data: "data 1" }],
       ["received", { data: "data 2" }],
       ["unsubscribe", "abcd-efgh"]
     ])
   })
 
-  it("delegates a manual unsubscribe to the cable", () => {
+  it("delegates a manual unsubscribe to pusher", () => {
     var requestFinished: Function = () => {}
 
     var observable = link.request(operation, function(_operation: Operation): any {
@@ -137,7 +188,43 @@ describe("ActionCableLink", () => {
     })
 
     // Pretend the HTTP link finished
-    requestFinished({})
+    requestFinished({ data: "initial payload" })
+
+    pusher.trigger(channelName, "update", {
+      result: {
+        data: "data 1"
+      },
+      more: true
+    })
+
+    subscription.unsubscribe()
+
+    expect(log).toEqual([
+      ["subscribe", "abcd-efgh"],
+      ["received", { data: "initial payload"}],
+      ["received", { data: "data 1" }],
+      ["unsubscribe", "abcd-efgh"]
+    ])
+  })
+
+  it("doesn't send empty initial responses", () => {
+    var requestFinished: Function = () => {}
+
+    var observable = link.request(operation, function(_operation: Operation): any {
+      return {
+        subscribe: (options: { next: Function }): void => {
+          requestFinished = options.next
+        }
+      }
+    })
+
+    // unpack the underlying subscription
+    var subscription = observable.subscribe(function(result: any) {
+      log.push(["received", result])
+    })
+
+    // Pretend the HTTP link finished
+    requestFinished({ data: null })
 
     pusher.trigger(channelName, "update", {
       result: {
@@ -155,6 +242,7 @@ describe("ActionCableLink", () => {
     ])
   })
 
+
   it("throws an error when no `decompress:` is configured", () => {
     const link = new PusherLink({
       pusher: new Pusher("123"),
@@ -171,7 +259,7 @@ describe("ActionCableLink", () => {
     }
 
     expect(() => {
-      link._onUpdate("abc", observer, payload)
+      link._onUpdate(observer, payload)
     }).toThrow("Received compressed_result but PusherLink wasn't configured with `decompress: (result: string) => any`. Add this configuration.")
   })
 
@@ -200,8 +288,8 @@ describe("ActionCableLink", () => {
     }
 
     // Send a dummy payload and then terminate the subscription
-    link._onUpdate("abc", observer, payload)
-    link._onUpdate("abc", observer, { more: false })
+    link._onUpdate(observer, payload)
+    link._onUpdate(observer, { more: false })
     expect(results).toEqual([{a: 1, b: 2}, "complete"])
   })
 })

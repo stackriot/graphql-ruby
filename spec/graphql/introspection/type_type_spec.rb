@@ -8,12 +8,14 @@ describe GraphQL::Introspection::TypeType do
        milkType:      __type(name: "Milk") { interfaces { name }, fields { type { kind, name, ofType { name } } } }
        dairyAnimal:   __type(name: "DairyAnimal") { name, kind, enumValues(includeDeprecated: false) { name, isDeprecated } }
        dairyProduct:  __type(name: "DairyProduct") { name, kind, possibleTypes { name } }
-       animalProduct: __type(name: "AnimalProduct") { name, kind, possibleTypes { name }, fields { name } }
+       animalProduct: __type(name: "AnimalProduct") { name, kind, specifiedByURL, possibleTypes { name }, fields { name } }
        missingType:   __type(name: "NotAType") { name }
+       timeType:      __type(name: "Time") { specifiedByURL }
      }
   |}
   let(:result) { Dummy::Schema.execute(query_string, context: {}, variables: {"cheeseId" => 2}) }
   let(:cheese_fields) {[
+    {"name"=>"dairyProduct", "isDeprecated" => false, "type"=>{"kind"=>"UNION", "name"=>"DairyProduct", "ofType"=>nil}},
     {"name"=>"deeplyNullableCheese", "isDeprecated" => false, "type"=>{ "kind" => "OBJECT", "name" => "Cheese", "ofType" => nil}},
     {"name"=>"flavor",      "isDeprecated" => false, "type" => { "kind" => "NON_NULL", "name" => nil, "ofType" => { "name" => "String"}}},
     {"name"=>"id",          "isDeprecated" => false, "type" => { "kind" => "NON_NULL", "name" => nil, "ofType" => { "name" => "Int"}}},
@@ -25,6 +27,7 @@ describe GraphQL::Introspection::TypeType do
   ]}
 
   let(:dairy_animals) {[
+    {"name"=>"NONE",       "isDeprecated"=> false },
     {"name"=>"COW",       "isDeprecated"=> false },
     {"name"=>"DONKEY",    "isDeprecated"=> false },
     {"name"=>"GOAT",      "isDeprecated"=> false },
@@ -40,9 +43,9 @@ describe GraphQL::Introspection::TypeType do
       },
       "milkType"=>{
         "interfaces"=>[
+          {"name"=>"AnimalProduct"},
           {"name"=>"Edible"},
           {"name"=>"EdibleAsMilk"},
-          {"name"=>"AnimalProduct"},
           {"name"=>"LocalProduct"},
         ],
         "fields"=>[
@@ -69,12 +72,14 @@ describe GraphQL::Introspection::TypeType do
       "animalProduct" => {
         "name"=>"AnimalProduct",
         "kind"=>"INTERFACE",
+        "specifiedByURL" => nil,
         "possibleTypes"=>[{"name"=>"Cheese"}, {"name"=>"Honey"}, {"name"=>"Milk"}],
         "fields"=>[
           {"name"=>"source"},
         ]
       },
       "missingType" => nil,
+      "timeType" => { "specifiedByURL" => "https://time.graphql"}
     }}
     assert_equal(expected, result.to_h)
   end
@@ -108,8 +113,8 @@ describe GraphQL::Introspection::TypeType do
     it "hides deprecated field arguments by default" do
       result = Dummy::Schema.execute <<-GRAPHQL
       {
-        __type(name: "Query") { 
-          fields { 
+        __type(name: "Query") {
+          fields {
             name
             args {
               name
@@ -129,8 +134,8 @@ describe GraphQL::Introspection::TypeType do
     it "can expose deprecated field arguments" do
       result = Dummy::Schema.execute <<-GRAPHQL
       {
-        __type(name: "Query") { 
-          fields { 
+        __type(name: "Query") {
+          fields {
             name
             args(includeDeprecated: true) {
               name
@@ -179,8 +184,8 @@ describe GraphQL::Introspection::TypeType do
     it "can expose deprecated input fields" do
       result = Dummy::Schema.execute <<-GRAPHQL
       {
-        __type(name: "DairyProductInput") { 
-          inputFields(includeDeprecated: true) { 
+        __type(name: "DairyProductInput") {
+          inputFields(includeDeprecated: true) {
             name
             isDeprecated
             deprecationReason
@@ -224,7 +229,7 @@ describe GraphQL::Introspection::TypeType do
       field_result = type_result["fields"].find { |f| f["name"] == "bases" }
       all_arg_names = ["after", "before", "first", "last", "nameIncludes", "complexOrder"]
       returned_arg_names = field_result["args"].map { |a| a["name"] }
-      assert_equal all_arg_names, returned_arg_names
+      assert_equal all_arg_names.sort, returned_arg_names.sort
     end
   end
 end

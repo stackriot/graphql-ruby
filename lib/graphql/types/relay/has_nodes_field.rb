@@ -1,12 +1,28 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   module Types
     module Relay
       # Include this module to your root Query type to get a Relay-style `nodes(id: ID!): [Node]` field that uses the schema's `object_from_id` hook.
+      #--
+      # @requires_ancestor: GraphQL::Schema::Object
       module HasNodesField
         def self.included(child_class)
           child_class.field(**field_options, &field_block)
+          child_class.extend(ExecutionMethods)
+        end
+
+        module ExecutionMethods
+          def get_relay_nodes(context, ids:)
+            ids.map { |id| context.schema.object_from_id(id, context) }
+          end
+        end
+
+        def get_relay_nodes(ids:)
+          query_class = self.class #: as GraphQL::Types::Relay::HasNodesField::ExecutionMethods
+          query_class.get_relay_nodes(context, ids: ids)
         end
 
         class << self
@@ -17,21 +33,16 @@ module GraphQL
               null: false,
               description: "Fetches a list of objects given a list of IDs.",
               relay_nodes_field: true,
+              resolver_method: :get_relay_nodes,
+              resolve_static: :get_relay_nodes
             }
           end
 
           def field_block
             Proc.new {
-              argument :ids, "[ID!]!", required: true,
+              #: self as GraphQL::Schema::Field
+              argument :ids, "[ID!]!",
                 description: "IDs of the objects."
-
-              def resolve(obj, args, ctx)
-                args[:ids].map { |id| ctx.schema.object_from_id(id, ctx) }
-              end
-
-              def resolve_field(obj, args, ctx)
-                resolve(obj, args, ctx)
-              end
             }
           end
         end

@@ -2,24 +2,37 @@
 require "spec_helper"
 
 describe GraphQL::Query::Context do
+  after do
+    # Clean up test fixtures so they don't pollute later tests
+    # (Usually this is cleaned up by execution code, but many tests here don't actually execute queries)
+    Fiber[:__graphql_runtime_info] = nil
+  end
+
   class ContextTestSchema < GraphQL::Schema
     class Query < GraphQL::Schema::Object
-      field :context, String, null: true, resolver_method: :fetch_context_key do
-        argument :key, String, required: true
+      field :context, String, resolver_method: :fetch_context_key, resolve_static: :fetch_context_key do
+        argument :key, String
       end
 
-      def fetch_context_key(key:)
+      def self.fetch_context_key(context, key:)
         context[key]
       end
 
-      field :query_name, String, null: true
+      def fetch_context_key(key:)
+        self.class.fetch_context_key(context, key: key)
+      end
 
-      def query_name
+      field :query_name, String, resolve_static: true
+
+      def self.query_name(context)
         context.query.class.name
       end
 
-      field :push_query_error, Integer, null: false
+      def query_name
+        self.class.query_name(context)
+      end
 
+      field :push_query_error, Integer, null: false
       def push_query_error
         context.add_error(GraphQL::ExecutionError.new("Query-level error"))
         1
@@ -55,26 +68,26 @@ describe GraphQL::Query::Context do
   end
 
   describe "empty values" do
-    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil, object: nil) }
+    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil) }
 
     it "returns returns nil and reports key? => false" do
-      assert_equal(nil, context[:some_key])
+      assert_nil(context[:some_key])
       assert_equal(false, context.key?(:some_key))
       assert_raises(KeyError) { context.fetch(:some_key) }
     end
   end
 
   describe "assigning values" do
-    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil, object: nil) }
+    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil) }
 
     it "allows you to assign new contexts" do
-      assert_equal(nil, context[:some_key])
+      assert_nil(context[:some_key])
       context[:some_key] = "wow!"
       assert_equal("wow!", context[:some_key])
     end
 
     describe "namespaces" do
-      let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: {a: 1}, object: nil) }
+      let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: {a: 1}) }
 
       it "doesn't conflict with base values" do
         ns = context.namespace(:stuff)
@@ -86,25 +99,22 @@ describe GraphQL::Query::Context do
   end
 
   describe "read values" do
-    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: {a: {b: 1}}, object: nil) }
+    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: {a: {b: 1}}) }
 
     it "allows you to read values of contexts using []" do
       assert_equal({b: 1}, context[:a])
     end
 
     it "allows you to read values of contexts using dig" do
-      if RUBY_VERSION >= '2.3.0'
-        assert_equal(1, context.dig(:a, :b))
-      else
-        assert_raises NoMethodError do
-          context.dig(:a, :b)
-        end
-      end
+      assert_equal(1, context.dig(:a, :b))
+      Fiber[:__graphql_runtime_info] = { context.query => OpenStruct.new(current_arguments: {c: 1}) }
+      assert_equal 1, context.dig(:current_arguments, :c)
+      assert_equal({c: 1}, context.dig(:current_arguments))
     end
   end
 
   describe "splatting" do
-    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: {a: {b: 1}}, object: nil) }
+    let(:context) { GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: {a: {b: 1}}) }
 
     let(:splat) { ->(**context) { context } }
 
@@ -113,12 +123,21 @@ describe GraphQL::Query::Context do
     end
   end
 
+  it "can override values set by runtime" do
+    context = GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: {a: {b: 1}})
+    Fiber[:__graphql_runtime_info] = { context.query => OpenStruct.new({ current_object: :runtime_value }) }
+    assert_equal :runtime_value, context[:current_object]
+    context[:current_object] = :override_value
+    assert_equal :override_value, context[:current_object]
+  end
+
   describe "query-level errors" do
     let(:query_string) { %|
       { pushQueryError }
     |}
 
     it "allows query-level errors" do
+      exec_next_WONTFIX ".add_error isn't supported"
       expected_err = { "message" => "Query-level error" }
       assert_equal [expected_err], result["errors"]
     end
@@ -153,9 +172,21 @@ describe GraphQL::Query::Context do
       end
     end
 
+    class PassthroughSource < GraphQL::Dataloader::Source
+      def fetch(keys)
+        keys
+      end
+    end
+
+    class IntArraySource < GraphQL::Dataloader::Source
+      def fetch(keys)
+        keys.map { |k| k.times.map { |i| i } }
+      end
+    end
+
     class ContextQuery < GraphQL::Schema::Object
-      field :get_scoped_context, String, null: true do
-        argument :key, String, required: true
+      field :get_scoped_context, String do
+        argument :key, String
         argument :lazy, Boolean, required: false, default_value: false
       end
 
@@ -168,8 +199,8 @@ describe GraphQL::Query::Context do
       end
 
       field :set_scoped_context, ContextQuery, null: false do
-        argument :key, String, required: true
-        argument :value, String, required: true
+        argument :key, String
+        argument :value, String
         argument :lazy, Boolean, required: false, default_value: false
       end
 
@@ -183,17 +214,33 @@ describe GraphQL::Query::Context do
           }
         else
           context.scoped_merge!(key => value)
-          self
+          context.dataload(PassthroughSource, self)
         end
+      end
+
+      field :int_list, [ContextQuery], null: false
+
+      def int_list
+        context.scoped_set!("int_list", "assigned")
+        context.dataload(IntArraySource, 4)
+      end
+
+      field :set_scoped_int, ContextQuery, null: false
+
+      def set_scoped_int
+        context.scoped_set!("int", object.to_s)
+        object.to_s
       end
     end
 
     class ContextSchema < GraphQL::Schema
       query(ContextQuery)
       lazy_resolve(LazyBlock, :value)
+      use GraphQL::Dataloader
     end
 
     it "can be set and does not leak to sibling fields" do
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
       query_str = %|
         {
           before: getScopedContext(key: "a")
@@ -238,6 +285,7 @@ describe GraphQL::Query::Context do
     end
 
     it "can be set and does not leak to sibling fields when all resolvers are lazy values" do
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
       query_str = %|
         {
           before: getScopedContext(key: "a", lazy: true)
@@ -268,6 +316,8 @@ describe GraphQL::Query::Context do
     end
 
     it "can be set and does not leak to sibling fields when all get resolvers are lazy values" do
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
+
       query_str = %|
         {
           before: getScopedContext(key: "a", lazy: true)
@@ -298,6 +348,8 @@ describe GraphQL::Query::Context do
     end
 
     it "can be set and does not leak to sibling fields when all set resolvers are lazy values" do
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
+
       query_str = %|
         {
           before: getScopedContext(key: "a")
@@ -327,17 +379,46 @@ describe GraphQL::Query::Context do
       assert_equal(expected, result)
     end
 
+    it "doesn't leak inside lists" do
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
+
+      query_str = <<-GRAPHQL
+      {
+        intList {
+          before: getScopedContext(key: "int")
+          setScopedInt {
+            inside: getScopedContext(key: "int")
+            inside2: getScopedContext(key: "int_list")
+          }
+          after: getScopedContext(key: "int")
+        }
+      }
+      GRAPHQL
+
+      expected_data = {"intList"=>
+         [{"setScopedInt"=>{"inside"=>"0", "inside2" => "assigned"}, "before"=>nil, "after"=>nil},
+          {"setScopedInt"=>{"inside"=>"1", "inside2" => "assigned"}, "before"=>nil, "after"=>nil},
+          {"setScopedInt"=>{"inside"=>"2", "inside2" => "assigned"}, "before"=>nil, "after"=>nil},
+          {"setScopedInt"=>{"inside"=>"3", "inside2" => "assigned"}, "before"=>nil, "after"=>nil}]}
+      result = ContextSchema.execute(query_str)
+      assert_equal(expected_data, result["data"])
+    end
+
     it "always retrieves a scoped context value if set" do
-      context = GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil, object: nil)
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
+      context = GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil)
+      dummy_runtime = OpenStruct.new(current_result: nil)
+      Fiber[:__graphql_runtime_info] = { context.query => dummy_runtime }
+      dummy_runtime.current_result = OpenStruct.new(path: ["somewhere"])
       expected_key = :a
       expected_value = :test
 
-      assert_equal(nil, context[expected_key])
+      assert_nil(context[expected_key])
       assert_equal({}, context.to_h)
       refute(context.key?(expected_key))
       assert_raises(KeyError) { context.fetch(expected_key) }
       assert_nil(context.fetch(expected_key, nil))
-      assert_nil(context.dig(expected_key)) if RUBY_VERSION >= '2.3.0'
+      assert_nil(context.dig(expected_key))
 
       context.scoped_merge!(expected_key => nil)
       context[expected_key] = expected_value
@@ -346,26 +427,81 @@ describe GraphQL::Query::Context do
       assert_equal({ expected_key => nil }, context.to_h)
       assert(context.key?(expected_key))
       assert_nil(context.fetch(expected_key))
-      assert_nil(context.dig(expected_key)) if RUBY_VERSION >= '2.3.0'
+      assert_nil(context.dig(expected_key))
 
-      context.scoped_context = {}
+      dummy_runtime.current_result = OpenStruct.new(path: ["something", "new"])
 
       assert_equal(expected_value, context[expected_key])
       assert_equal({ expected_key => expected_value}, context.to_h)
       assert(context.key?(expected_key))
       assert_equal(expected_value, context.fetch(expected_key))
-      assert_equal(expected_value, context.dig(expected_key)) if RUBY_VERSION >= '2.3.0'
+      assert_equal(expected_value, context.dig(expected_key))
+
+      # Enter a child field:
+      dummy_runtime.current_result = OpenStruct.new(path: ["somewhere", "child"])
+      assert_nil(context[expected_key])
+      assert_equal({ expected_key => nil }, context.to_h)
+      assert(context.key?(expected_key))
+      assert_nil(context.fetch(expected_key))
+      assert_nil(context.dig(expected_key))
+
+      # And a grandchild field
+      dummy_runtime.current_result = OpenStruct.new(path: ["somewhere", "child", "grandchild"])
+      context.scoped_set!(expected_key, :something_else)
+      context.scoped_set!(:another_key, :another_value)
+      assert_equal(:something_else, context[expected_key])
+      assert_equal({ expected_key => :something_else, another_key: :another_value }, context.to_h)
+      assert(context.key?(expected_key))
+      assert_equal(:something_else, context.fetch(expected_key))
+      assert_equal(:something_else, context.dig(expected_key))
     end
 
     it "sets a value using #scoped_set!" do
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
+
       expected_key = :a
       expected_value = :test
 
-      context = GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil, object: nil)
+      context = GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil)
       assert_nil(context[expected_key])
 
       context.scoped_set!(expected_key, expected_value)
       assert_equal(expected_value, context[expected_key])
+    end
+
+    it "has a #current_path method" do
+      exec_next_TODO "Not supported because it depends on context[:current_path]"
+
+      context = GraphQL::Query::Context.new(query: OpenStruct.new(schema: schema), values: nil)
+      current_result = OpenStruct.new(path: ["somewhere", "child", "grandchild"])
+      Fiber[:__graphql_runtime_info] = { context.query => OpenStruct.new(current_result: current_result) }
+      assert_equal ["somewhere", "child", "grandchild"], context.scoped_context.current_path
+    end
+  end
+
+  describe "Adding extensions to the response" do
+    class ResponseExtensionsSchema < GraphQL::Schema
+      class Query < GraphQL::Schema::Object
+        field :with_extension, String, resolve_static: true
+
+        def self.with_extension(context)
+          context.response_extensions["Something"] = "Something else"
+          "OK"
+        end
+
+        def with_extension
+          self.class.with_extension(context)
+        end
+      end
+      query(Query)
+    end
+
+    it "adds .response_extensions" do
+      expected_response = {
+        "data" => { "withExtension" => "OK" },
+        "extensions" => { "Something" => "Something else" },
+      }
+      assert_equal(expected_response, ResponseExtensionsSchema.execute("{ withExtension }"))
     end
   end
 end

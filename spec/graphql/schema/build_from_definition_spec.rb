@@ -68,14 +68,17 @@ directive @foo(arg: Int, nullDefault: Int = null) on FIELD
 
 directive @greeting(pleasant: Boolean = true) on ARGUMENT_DEFINITION | ENUM | FIELD_DEFINITION | INPUT_OBJECT | INTERFACE | OBJECT | UNION
 
-directive @hashed on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @greeting2 on INTERFACE
+
+directive @hashed repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
 directive @language(is: String!) on ENUM_VALUE
 
-type Hello implements Secret @greeting {
+type Hello implements Secret & Secret2 @greeting {
   goodbye(saying: Parting @greeting): Parting
   humbug: Int @greeting(pleasant: false)
   password: Phrase @hashed
+  password2: String
   str(in: Input): String
 }
 
@@ -90,8 +93,13 @@ enum Parting @greeting {
 
 union Phrase @greeting = Hello | Word
 
-interface Secret @greeting {
+interface Secret implements Secret2 @greeting @greeting2 {
   password: String
+  password2: String
+}
+
+interface Secret2 {
+  password2: String
 }
 
 type Word {
@@ -101,10 +109,14 @@ type Word {
 
       parsed_schema = GraphQL::Schema.from_definition(schema)
       hello_type = parsed_schema.get_type("Hello")
-      assert_equal ["deprecated", "foo", "greeting", "hashed", "include", "language", "skip"], parsed_schema.directives.keys.sort
+      assert_equal ["deprecated", "foo", "greeting", "greeting2", "hashed", "include", "language", "oneOf", "skip", "specifiedBy"], parsed_schema.directives.keys.sort
       parsed_schema.directives.values.each do |dir_class|
         assert dir_class < GraphQL::Schema::Directive
       end
+
+      assert_equal true, parsed_schema.directives["hashed"].repeatable?
+      assert_equal false, parsed_schema.directives["deprecated"].repeatable?
+
       assert_equal 1, hello_type.directives.size
       assert_instance_of parsed_schema.directives["greeting"], hello_type.directives.first
       assert_equal({ pleasant: true }, hello_type.directives.first.arguments.keyword_arguments)
@@ -119,7 +131,83 @@ type Word {
       assert_instance_of parsed_schema.directives["language"], au_revoir_directives.first
       assert_equal({ is: "fr" }, au_revoir_directives.first.arguments.keyword_arguments)
 
+      secret_type = parsed_schema.get_type("Secret")
+      assert_equal 2, secret_type.directives.size
+
       assert_schema_and_compare_output(schema)
+    end
+
+    it 'can build a schema with directives whose inputs have a cycle' do
+      schema = <<-SCHEMA
+schema {
+  query: Hello
+}
+
+directive @bar(arg: InputA) on FIELD_DEFINITION
+
+directive @foo(arg: InputA) on FIELD
+
+type Hello {
+  int: Int @bar(arg: {int: 1})
+}
+
+input InputA {
+  int: Int
+  value: InputB
+  value2: InputC
+}
+
+input InputB {
+  value: InputA
+}
+
+input InputC {
+  value: InputB
+}
+      SCHEMA
+
+      parsed_schema = GraphQL::Schema.from_definition(schema)
+      assert_equal ["bar", "deprecated", "foo", "include", "oneOf", "skip", "specifiedBy"], parsed_schema.directives.keys.sort
+      parsed_schema.directives.values.each do |dir_class|
+        assert dir_class < GraphQL::Schema::Directive
+      end
+
+      assert_schema_and_compare_output(schema)
+    end
+
+    it 'can apply a directive whose argument is the input object being built' do
+      schema = <<-SCHEMA
+directive @limit(arg: Limit) on INPUT_FIELD_DEFINITION
+
+input Limit {
+  max: Int @limit(arg: {max: 5})
+}
+
+type Query {
+  f(l: Limit): Int
+}
+      SCHEMA
+
+      parsed_schema = assert_schema_and_compare_output(schema)
+      limit_directive = parsed_schema.get_type("Limit").arguments["max"].directives.first
+      assert_equal({ max: 5 }, limit_directive.arguments[:arg].to_h)
+    end
+
+    it 'applies @oneOf before building input object arguments' do
+      schema = <<-SCHEMA
+input OneOfInput @oneOf {
+  a: Int!
+}
+
+type Query {
+  f(i: OneOfInput): Int
+}
+      SCHEMA
+
+      err = assert_raises ArgumentError do
+        GraphQL::Schema.from_definition(schema)
+      end
+      assert_equal "Argument 'OneOfInput.a' must be nullable because it is part of a OneOf type, add `required: false`.", err.message
     end
 
     it 'supports descriptions and definition_line' do
@@ -191,7 +279,8 @@ union U = Hello
 
       assert_schema_and_compare_output(schema)
 
-      built_schema = GraphQL::Schema.from_definition(schema)
+      # TODO: GraphQL::CParser doesn't support definition_line yet.
+      built_schema = GraphQL::Schema.from_definition(schema, parser: GraphQL::Language::Parser)
       # The schema's are the same since there's no description
       assert_equal 1, built_schema.ast_node.line
       assert_equal 1, built_schema.ast_node.definition_line
@@ -233,6 +322,17 @@ union U = Hello
       assert_equal 63, built_schema.types["U"].ast_node.definition_line
     end
 
+    it 'handles empty type descriptions' do
+      schema = <<-SCHEMA
+"""
+"""
+type Query {
+  f1: Int
+}
+      SCHEMA
+      refute_nil GraphQL::Schema.from_definition(schema)
+    end
+
     it 'maintains built-in directives' do
       schema = <<-SCHEMA
 schema {
@@ -245,7 +345,7 @@ type Hello {
       SCHEMA
 
       built_schema = GraphQL::Schema.from_definition(schema)
-      assert_equal ['deprecated', 'include', 'skip'], built_schema.directives.keys.sort
+      assert_equal ['deprecated', 'include', 'oneOf', 'skip', 'specifiedBy'], built_schema.directives.keys.sort
     end
 
     it 'supports overriding built-in directives' do
@@ -265,9 +365,9 @@ type Hello {
 
       built_schema = GraphQL::Schema.from_definition(schema)
 
-      refute built_schema.directives['skip'] == GraphQL::Directive::SkipDirective
-      refute built_schema.directives['include'] == GraphQL::Directive::IncludeDirective
-      refute built_schema.directives['deprecated'] == GraphQL::Directive::DeprecatedDirective
+      refute built_schema.directives['skip'] == GraphQL::Schema::Directive::Skip
+      refute built_schema.directives['include'] == GraphQL::Schema::Directive::Include
+      refute built_schema.directives['deprecated'] == GraphQL::Schema::Directive::Deprecated
     end
 
     it 'supports adding directives while maintaining built-in directives' do
@@ -506,6 +606,92 @@ type Hello implements WorldInterface {
 
 interface WorldInterface {
   str: String
+}
+      SCHEMA
+
+      assert_schema_and_compare_output(schema)
+    end
+
+    it "requires transitive dependencies to be named" do
+      schema_str = <<~GRAPHQL
+      interface A implements B {
+        s: String
+      }
+
+      interface B {
+        s: String
+      }
+
+      type Query implements A & B {
+        s: String
+      }
+      GRAPHQL
+
+      assert_schema_and_compare_output(schema_str)
+
+      invalid_schema_str = schema_str.sub("A & B", "A")
+      assert_raises GraphQL::Schema::InvalidDocumentError do
+        GraphQL::Schema.from_definition(invalid_schema_str)
+      end
+    end
+
+    it "raises a helpful error when a type implements something that isn't an interface" do
+      ["type Bar { a: Int }", "scalar Bar", "enum Bar { A }", "union Bar = Query", "input Bar { a: Int }"].each do |bar_defn|
+        err = assert_raises(RuntimeError, bar_defn) do
+          GraphQL::Schema.from_definition("type Query implements Bar { a: Int }\n#{bar_defn}")
+        end
+        assert_includes err.message, "cannot be implemented since it's not a GraphQL Interface", bar_defn
+      end
+    end
+
+    it "supports interfaces that implement interfaces" do
+      schema = <<-SCHEMA
+interface Named implements Node {
+  id: ID
+  name: String
+}
+
+interface Node {
+  id: ID
+}
+
+type Query {
+  thing: Thing
+}
+
+type Thing implements Named & Node {
+  id: ID
+  name: String
+}
+      SCHEMA
+
+      assert_schema_and_compare_output(schema)
+    end
+
+    it "only adds the interface to the type once" do
+      schema = <<-SCHEMA
+interface Named implements Node {
+  id: ID
+  name: String
+}
+
+interface Node {
+  id: ID
+}
+
+type Query {
+  thing: Thing
+}
+
+type Thing implements Named & Node & Timestamped {
+  id: ID
+  name: String
+  timestamp: String
+}
+
+interface Timestamped implements Node {
+  id: ID
+  timestamp: String
 }
       SCHEMA
 
@@ -820,8 +1006,8 @@ enum Enum {
 }
 
 type Query {
-  field(argument: String): String
-  deprecatedField(argument: String): String @deprecated(reason: "Test")
+  field(argument: Enum): Interface
+  deprecatedField(argument: Input): Union @deprecated(reason: "Test")
 }
 
 interface Interface {
@@ -841,8 +1027,10 @@ directive @Directive (
   argument: String
 ) on SCHEMA
 
+directive @custom(thing: Boolean) on SCHEMA
+
 type Type implements Interface {
-  field(argument: String): String
+  field(argument: Scalar): Type
 }
       GRAPHQL
 
@@ -855,8 +1043,8 @@ type Type implements Interface {
       assert_equal [9, 1], schema.types["Query"].ast_node.position
       assert_equal [10, 3], schema.types["Query"].fields["field"].ast_node.position
       assert_equal [10, 9], schema.types["Query"].fields["field"].arguments["argument"].ast_node.position
-      assert_equal [11, 45], schema.types["Query"].fields["deprecatedField"].ast_node.directives[0].position
-      assert_equal [11, 57], schema.types["Query"].fields["deprecatedField"].ast_node.directives[0].arguments[0].position
+      assert_equal [11, 43], schema.types["Query"].fields["deprecatedField"].ast_node.directives[0].position
+      assert_equal [11, 55], schema.types["Query"].fields["deprecatedField"].ast_node.directives[0].arguments[0].position
       assert_equal [14, 1], schema.types["Interface"].ast_node.position
       assert_equal [15, 3], schema.types["Interface"].fields["field"].ast_node.position
       assert_equal [15, 9], schema.types["Interface"].fields["field"].arguments["argument"].ast_node.position
@@ -866,7 +1054,7 @@ type Type implements Interface {
       assert_equal [23, 3], schema.types["Input"].arguments["argument"].ast_node.position
       assert_equal [26, 1], schema.directives["Directive"].ast_node.position
       assert_equal [28, 3], schema.directives["Directive"].arguments["argument"].ast_node.position
-      assert_equal [31, 22], schema.types["Type"].ast_node.interfaces[0].position
+      assert_equal [33, 22], schema.types["Type"].ast_node.interfaces[0].position
     end
 
     it 'can build a schema from a file path' do
@@ -943,21 +1131,6 @@ SCHEMA
         GraphQL::Schema.from_definition(schema)
       end
       assert_equal 'Must provide schema definition with query type or a type named Query.', err.message
-    end
-
-    it 'Requires a query type that defines at least one field' do
-      schema = <<-SCHEMA
-schema {
-  query: Hello
-}
-
-type Hello { }
-SCHEMA
-
-      err = assert_raises(GraphQL::Schema::InvalidTypeError) do
-        GraphQL::Schema.from_definition(schema).to_graphql
-      end
-      assert_equal 'Hello is invalid: Hello must define at least 1 field. 0 defined.', err.message
     end
 
     it 'Unknown type referenced' do
@@ -1390,7 +1563,7 @@ type ThingEdge {
             }
           }
         }
-        assert_equal expected_data, result["data"]
+        assert_graphql_equal expected_data, result["data"]
       end
 
       it "doesn't add arguments that aren't in the IDL" do
@@ -1398,6 +1571,23 @@ type ThingEdge {
         assert_equal schema_defn, schema.to_definition
       end
     end
+  end
+
+  it "works when a directive argument uses a redefined scalar" do
+    schema_str = <<-GRAPHQL
+      schema {
+        query: QueryRoot
+      }
+
+      directive @myDirective(id: ID) on MUTATION | QUERY
+
+      scalar ID
+
+      type QueryRoot {}
+    GRAPHQL
+
+    schema = GraphQL::Schema.from_definition(schema_str)
+    assert_equal schema.directives["myDirective"].get_argument("id").type, schema.get_type("ID")
   end
 
   describe "orphan types" do
@@ -1448,5 +1638,488 @@ type ReachableType implements Node {
 
       assert_equal expected_definition, schema.to_definition, "UnreachableType is excluded"
     end
+  end
+
+  it "works with indirect interface implementation" do
+    schema_string = <<~GRAPHQL
+      type Query {
+        entities: [Entity!]!
+        person: Person
+      }
+
+      type Person implements NamedEntity & Entity {
+        id: ID!
+        name: String
+        nationality: String
+      }
+
+      type Product implements NamedEntity & Entity {
+        id: ID!
+        name: String
+        amount: Int
+      }
+
+      interface NamedEntity implements Entity {
+        id: ID!
+        name: String
+      }
+
+      type Payment implements Entity {
+        id: ID!
+        amount: Int
+      }
+
+      interface Entity {
+        id: ID!
+      }
+    GRAPHQL
+
+    schema = GraphQL::Schema.from_definition(schema_string)
+
+    assert_equal ["amount", "id"], schema.types.fetch("Payment").fields.keys.sort
+    assert_equal ["id", "name", "nationality"], schema.types.fetch("Person").fields.keys.sort
+  end
+
+  it "adds possible types for indirect interfaces that are defined later in the document" do
+    schema = GraphQL::Schema.from_definition <<~GRAPHQL
+      type Query {
+        node: Node
+        resource: Resource
+      }
+
+      type Thing implements Resource & Node {
+        id: ID!
+        name: String
+      }
+
+      interface Resource implements Node {
+        id: ID!
+        name: String
+      }
+
+      interface Node {
+        id: ID!
+      }
+    GRAPHQL
+
+    assert_equal ["Thing"], schema.possible_types(schema.types["Node"]).map(&:graphql_name)
+    assert_equal ["Thing"], schema.possible_types(schema.types["Resource"]).map(&:graphql_name)
+    assert_equal [], schema.validate("{ node { ... on Thing { name } } }")
+  end
+
+  it "supports extending schemas with directives" do
+    schema_sdl = <<~EOS
+    extend schema
+      @link(import: ["@key", "@shareable"], url: "https://specs.apollo.dev/federation/v2.0")
+
+    directive @link(as: String, for: link__Purpose, import: [link__Import], url: String!) repeatable on SCHEMA
+
+    type Query {
+      something: Int
+    }
+
+    scalar link__Import
+
+    enum link__Purpose {
+      EXECUTION
+      SECURITY
+    }
+    EOS
+
+    schema = GraphQL::Schema.from_definition(schema_sdl)
+    assert_equal ["link"], schema.schema_directives.map(&:graphql_name)
+    assert_equal({ url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@shareable"] },
+      schema.schema_directives.first.arguments.to_h)
+
+    assert_equal schema_sdl, schema.to_definition
+  end
+
+
+  it "supports extending schemas with directives" do
+    schema_sdl = <<~EOS
+      extend schema
+        @link(url: "https://specs.apollo.dev/federation/v2.0",
+              import: ["@key", "@shareable"])
+
+      type Query {
+        something: Int
+      }
+    EOS
+
+    class LinkSchema < GraphQL::Schema
+      class Import < GraphQL::Schema::Scalar
+      end
+
+      class Purpose < GraphQL::Schema::Scalar
+      end
+
+      class Link < GraphQL::Schema::Directive
+        argument :url, String
+        argument :as, String, required: false
+        argument :import, Import, required: false
+        argument :for, Purpose, required: false
+
+        repeatable(true)
+        locations SCHEMA
+      end
+
+      directive(Link)
+    end
+
+    assert_equal LinkSchema::Link, LinkSchema.directives["link"]
+    schema = LinkSchema.from_definition(schema_sdl)
+    assert_equal ["link"], schema.schema_directives.map(&:graphql_name)
+    assert_equal({ url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@shareable"] },
+      schema.schema_directives.first.arguments.to_h)
+
+    expected_schema = <<~GRAPHQL
+      extend schema
+        @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@shareable"])
+
+      directive @link(as: String, for: Purpose, import: Import, url: String!) repeatable on SCHEMA
+
+      scalar Import
+
+      scalar Purpose
+
+      type Query {
+        something: Int
+      }
+    GRAPHQL
+    assert_equal expected_schema, schema.to_definition
+  end
+
+  describe "JSON type" do
+    class JsonTypeApplication
+      SCHEMA_STRING = <<~EOS
+        scalar JsonValue
+
+        type Query {
+          echoJsonValue(arg: JsonValue): JsonValue
+        }
+      EOS
+
+      def initialize
+        @schema = GraphQL::Schema.from_definition(SCHEMA_STRING, default_resolve: self)
+      end
+
+      def execute_query(query_string, **vars)
+        @schema.execute(query_string, variables: vars)
+      end
+
+      def call(parent_type, field, object, args, context)
+        args.fetch(:arg)
+      end
+
+      def coerce_input(type, value, ctx)
+        nils = ctx[:nils] ||= []
+        if value.is_a?(Array)
+          nils << value[2]
+        else
+          nils << value["abc"]
+        end
+        ::JSON.generate(value)
+      end
+
+      def coerce_result(type, value, ctx)
+        ::JSON.parse(value)
+      end
+    end
+
+    it "Sends normal ruby values to schema coercion" do
+      app = JsonTypeApplication.new
+      # Legacy execution coerces once during validation and again at runtime
+      expected_nils = TESTING_EXEC_NEXT ? [nil] : [nil, nil]
+
+      res_1 = app.execute_query(<<~EOS, arg: [3, "abc", nil, 7])
+        query WithArg($arg: JsonValue) {
+          echoJsonValue(arg: $arg)
+        }
+      EOS
+
+      assert_equal([3, "abc", nil, 7], res_1["data"]["echoJsonValue"])
+      assert_equal expected_nils, res_1.context[:nils]
+
+      res_2 = app.execute_query(<<~EOS)
+        query {
+          echoJsonValue(arg: [3, "abc", null, 7])
+        }
+      EOS
+      assert_equal([3, "abc", nil, 7], res_2["data"]["echoJsonValue"])
+      assert_equal expected_nils, res_2.context[:nils]
+
+      res_3 = app.execute_query(<<~EOS, arg: { "abc" => nil, "def" => 7 })
+      query WithArg($arg: JsonValue) {
+        echoJsonValue(arg: $arg)
+      }
+      EOS
+
+      assert_equal({ "abc" => nil, "def" => 7 }, res_3["data"]["echoJsonValue"])
+      assert_equal expected_nils, res_3.context[:nils]
+
+      res_4 = app.execute_query(<<~EOS)
+      query {
+        echoJsonValue(arg: { abc: null, def: 7, ghi: { jkl: null } })
+      }
+      EOS
+
+      assert_equal({ "abc" => nil, "def" => 7, "ghi"=>{"jkl"=>nil} }, res_4["data"]["echoJsonValue"])
+      assert_equal expected_nils, res_4.context[:nils]
+    end
+  end
+
+  it "reprints schema with extend when root types match" do
+    schema_str = <<~EOS
+      extend schema
+        @customDirective
+
+      directive @customDirective repeatable on SCHEMA
+
+      type Query {
+        foo: Int
+      }
+    EOS
+
+    schema = GraphQL::Schema.from_definition(schema_str)
+    assert_equal schema_str, schema.to_definition
+  end
+
+  describe "Custom base types" do
+    class MyObject < GraphQL::Schema::Object; end
+    class MyUnion < GraphQL::Schema::Union; end
+    class MyScalar < GraphQL::Schema::Scalar; end
+    class MyEnum < GraphQL::Schema::Enum; end
+    class MyInputObject < GraphQL::Schema::InputObject; end
+    module MyInterface
+      include GraphQL::Schema::Interface
+    end
+
+    it "Builds a schema using custom base types" do
+      schema = GraphQL::Schema.from_definition(%|
+        interface A { a:Int }
+        type B implements A { a:Int }
+        union C = B
+        scalar D
+        enum E { YES }
+        input F { f:Int }
+        type Query {
+          a(f:F): A
+          c: C
+          d: D
+          e: E
+        }
+      |, base_types: {
+        object: MyObject,
+        interface: MyInterface,
+        union: MyUnion,
+        scalar: MyScalar,
+        enum: MyEnum,
+        input_object: MyInputObject,
+      })
+
+      assert schema.get_type("A") <= MyInterface
+      assert schema.get_type("B") <= MyObject
+      assert schema.get_type("C") <= MyUnion
+      assert schema.get_type("D") <= MyScalar
+      assert schema.get_type("E") <= MyEnum
+      assert schema.get_type("F") <= MyInputObject
+    end
+
+    class MyField < GraphQL::Schema::Field; end
+
+    class MyObjectWithFieldClass < GraphQL::Schema::Object
+      field_class(MyField)
+    end
+
+    class MyObjectWithFieldMethod < GraphQL::Schema::Object
+      def self.field(*args, **kwargs, &block)
+        kwargs[:description] ||= "Added by .field"
+        super
+      end
+    end
+
+    it "uses custom field classes and field methods" do
+      sdl = "type Query { a: Int }"
+      schema = GraphQL::Schema.from_definition(sdl, base_types: { object: MyObjectWithFieldClass })
+      assert_instance_of MyField, schema.get_type("Query").get_field("a")
+
+      schema = GraphQL::Schema.from_definition(sdl, base_types: { object: MyObjectWithFieldMethod })
+      assert_equal "Added by .field", schema.get_type("Query").get_field("a").description
+    end
+  end
+
+  describe "Type extensions" do
+    it "Extends object types with fields and directives" do
+      sdl = %|
+        directive @a on OBJECT
+        directive @b on OBJECT
+        type T @a { a:Int }
+        extend type T @b { b:Int }
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["a", "b"], schema.get_type("T").fields.keys.sort
+      assert_equal ["a", "b"], schema.get_type("T").directives.map(&:graphql_name).sort
+    end
+
+    it "Extends object types with interfaces" do
+      sdl = %|
+        interface A { a:Int }
+        interface B { b:Int }
+        type T implements A { a:Int }
+        extend type T implements B { b:Int }
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["A", "B"], schema.get_type("T").interfaces.map(&:graphql_name).sort
+    end
+
+    it "Extends interface types with fields and directives" do
+      sdl = %|
+        directive @a on INTERFACE
+        directive @b on INTERFACE
+        interface I @a { a:Int }
+        extend interface I @b { b:Int }
+        type T implements I { a:Int b:Int }
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["a", "b"], schema.get_type("I").fields.keys.sort
+      assert_equal ["a", "b"], schema.get_type("I").directives.map(&:graphql_name).sort
+    end
+
+    it "Extends interface types with interfaces" do
+      sdl = %|
+        interface A { a:Int }
+        interface B { b:Int }
+        extend interface A implements B { b:Int }
+        type T implements A { a:Int b:Int }
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["B"], schema.get_type("A").interfaces.map(&:graphql_name).sort
+    end
+
+    it "Extends scalar types with directives" do
+      sdl = %|
+        directive @a on SCALAR
+        directive @b on SCALAR
+        scalar T @a
+        extend scalar T @b
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["a", "b"], schema.get_type("T").directives.map(&:graphql_name).sort
+    end
+
+    it "Extends enum types with values and directives" do
+      sdl = %|
+        directive @a on ENUM
+        directive @b on ENUM
+        enum T @a { YES }
+        extend enum T @b { NO }
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["NO", "YES"], schema.get_type("T").values.keys.sort
+      assert_equal ["a", "b"], schema.get_type("T").directives.map(&:graphql_name).sort
+    end
+
+    it "Extends input object types with arguments and directives" do
+      sdl = %|
+        directive @a on INPUT_OBJECT
+        directive @b on INPUT_OBJECT
+        input T @a { a:Int }
+        extend input T @b { b:Int }
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["a", "b"], schema.get_type("T").arguments.keys.sort
+      assert_equal ["a", "b"], schema.get_type("T").directives.map(&:graphql_name).sort
+    end
+
+    it "Extends union types with types and directives" do
+      sdl = %|
+        directive @a on UNION
+        directive @b on UNION
+        type A { a:Int }
+        type B { b:Int }
+        union T @a = A
+        extend union T @b = B
+        type Query { t:T }
+      |
+      schema = GraphQL::Schema.from_definition(sdl)
+      assert_equal ["A", "B"], schema.possible_types(schema.get_type("T")).map(&:graphql_name).sort
+      assert_equal ["a", "b"], schema.get_type("T").directives.map(&:graphql_name).sort
+    end
+  end
+
+  if USING_C_PARSER
+    it "makes frozen identifiers with CParser" do
+      schema_class = GraphQL::Schema.from_definition("type Query { f: Boolean }")
+      assert_equal "Query", schema_class.query.ast_node.name
+      assert schema_class.query.ast_node.name.frozen?
+    end
+  end
+
+  it "works when directives use argument types defined after them" do
+    schema_sdl = <<~GRAPHQL
+      directive @foo(value: SomeEnum!) on OBJECT
+      directive @bar on ENUM_VALUE
+
+      enum SomeEnum {
+        BAZ @bar
+      }
+
+      type Query {
+        someEnum: SomeEnum!
+      }
+    GRAPHQL
+    GraphQL::Schema.from_definition(schema_sdl)
+  end
+
+  it "works with invalid directive argument value" do
+    sdl = <<~EOS
+      directive @requiresScopes(scopes: [[String]]) on FIELD_DEFINITION
+
+      type Query {
+        product: Product
+      }
+
+      type Product {
+        shippingEstimate: String @requiresScopes(scopes: "shipping")
+      }
+    EOS
+
+    assert GraphQL::Schema.from_definition(sdl).to_definition
+  end
+
+  it "lets you add extras after definition" do
+    schema_definition = <<~GRAPHQL
+      type Query {
+        testField: String!
+      }
+    GRAPHQL
+
+    lookahead = nil
+    resolver_implementation = {
+      "Query" => {
+        "testField" => lambda do |object, args, context|
+          lookahead = args[:lookahead]
+          "test value"
+        end
+      }
+    }
+
+    schema = GraphQL::Schema.from_definition(
+      schema_definition,
+      default_resolve: resolver_implementation
+    )
+
+    schema.query.fields["testField"].extras([:lookahead])
+
+    result = schema.execute("{ testField }")
+    assert_equal "test value", result["data"]["testField"]
+    assert_instance_of GraphQL::Execution::Lookahead, lookahead
   end
 end

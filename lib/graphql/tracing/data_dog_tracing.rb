@@ -1,4 +1,8 @@
 # frozen_string_literal: true
+#--
+# typed: ignore
+
+require "graphql/tracing/platform_tracing"
 
 module GraphQL
   module Tracing
@@ -15,17 +19,23 @@ module GraphQL
       }
 
       def platform_trace(platform_key, key, data)
-        tracer.trace(platform_key, service: service_name) do |span|
-          span.span_type = 'custom'
+        tracer.trace(platform_key, service: options[:service], type: 'custom') do |span|
+          span.set_tag('component', 'graphql')
+          span.set_tag('operation', key)
 
           if key == 'execute_multiplex'
             operations = data[:multiplex].queries.map(&:selected_operation_name).join(', ')
-            span.resource = operations unless operations.empty?
 
-            # For top span of query, set the analytics sample rate tag, if available.
-            if analytics_enabled?
-              Datadog::Contrib::Analytics.set_sample_rate(span, analytics_sample_rate)
+            resource = if operations.empty?
+              first_query = data[:multiplex].queries.first
+              fallback_transaction_name(first_query && first_query.context)
+            else
+              operations
             end
+            span.resource = resource if resource
+
+            # [Deprecated] will be removed in the future
+            span.set_metric('_dd1.sr.eausr', analytics_sample_rate) if analytics_enabled?
           end
 
           if key == 'execute_query'
@@ -34,29 +44,39 @@ module GraphQL
             span.set_tag(:query_string, data[:query].query_string)
           end
 
+          prepare_span(key, data, span)
+
           yield
         end
       end
 
-      def service_name
-        options.fetch(:service, 'ruby-graphql')
+      # Implement this method in a subclass to apply custom tags to datadog spans
+      #
+      # **Parameters**
+      #
+      # - `key` (`String`) — The event being traced
+      # - `data` (`Hash`) — The runtime data for this event; see [GraphQL::Tracing](rdoc-ref:GraphQL::Tracing) for keys for each event
+      # - `span` (`Datadog::Tracing::SpanOperation`) — The datadog span for this event
+      #
+      # :call-seq:
+      #   prepare_span(String key, Hash data, Datadog::Tracing::SpanOperation span)
+      def prepare_span(key, data, span)
       end
 
       def tracer
-        options.fetch(:tracer, Datadog.tracer)
-      end
+        default_tracer = defined?(Datadog::Tracing) ? Datadog::Tracing : Datadog.tracer
 
-      def analytics_available?
-        defined?(Datadog::Contrib::Analytics) \
-          && Datadog::Contrib::Analytics.respond_to?(:enabled?) \
-          && Datadog::Contrib::Analytics.respond_to?(:set_sample_rate)
+        # [Deprecated] options[:tracer] will be removed in the future
+        options.fetch(:tracer, default_tracer)
       end
 
       def analytics_enabled?
-        analytics_available? && Datadog::Contrib::Analytics.enabled?(options.fetch(:analytics_enabled, false))
+        # [Deprecated] options[:analytics_enabled] will be removed in the future
+        options.fetch(:analytics_enabled, false)
       end
 
       def analytics_sample_rate
+        # [Deprecated] options[:analytics_sample_rate] will be removed in the future
         options.fetch(:analytics_sample_rate, 1.0)
       end
 

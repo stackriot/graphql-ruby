@@ -1,41 +1,176 @@
 # frozen_string_literal: true
-
 require 'rubygems'
 require 'bundler'
+
+# `rake test` runs specs with parallel_tests, which sets TEST_ENV_NUMBER for each worker:
+# "" for the first one, then "2", "3", ... Use this to give each worker its own databases and tmp files.
+# It's "" when running serially, too.
+TEST_ENV_SUFFIX = ENV["TEST_ENV_NUMBER"].to_s
+
+require 'simplecov'
+require 'simplecov-lcov'
+SimpleCov::Formatter::LcovFormatter.config.report_with_single_file = true
+SimpleCov.formatters = [
+  SimpleCov::Formatter::HTMLFormatter,
+  SimpleCov::Formatter::LcovFormatter
+]
+SimpleCov.start do
+  enable_coverage :branch
+  # Parallel workers' results are merged into one report. Serial runs shouldn't pick up leftovers from those.
+  use_merging(!ENV["TEST_ENV_NUMBER"].nil?)
+  add_filter "spec/"
+  add_group "Generators", "lib/generators"
+  add_group "Execution", [/analysis/, /language/, /execution/, /static_validation/, /pagination/, /subscriptions/, /query/, /tracing/, /introspection/, /backtrace/]
+  add_group "Helpers", [/rake_task/, /testing/, /rubocop/]
+  add_group "Definition", [/types/, /relay/, /schema/]
+  add_group "Dataloader", [/dataloader/]
+end
+
 Bundler.require
 
-# Print full backtrace for failiures:
+# Print full backtrace for failures:
 ENV["BACKTRACE"] = "1"
-# Set this env var to use legacy runtime for fixture schemas.
-TESTING_INTERPRETER = !ENV["TESTING_LEGACY"]
 
 require "graphql"
+if ENV["GRAPHQL_CPARSER"]
+  USING_C_PARSER = true
+  puts "Opting in to GraphQL::CParser"
+  require "graphql-c_parser"
+else
+  USING_C_PARSER = false
+end
+
+if ENV["GRAPHQL_FUTURE"]
+  puts "Opting into GraphQL.reject_numbers_followed_by_names"
+  GraphQL.reject_numbers_followed_by_names = true
+  puts "Opting into GraphQL::Schema::Visibility::Profile"
+  GraphQL::Schema.use(GraphQL::Schema::Visibility, migration_errors: true)
+  ADD_WARDEN = false
+  TESTING_EXEC_NEXT = true
+else
+  ADD_WARDEN = true
+  TESTING_EXEC_NEXT = false
+end
+
+# C methods aren't fair game in non-main Ractors
+RUN_RACTOR_TESTS = (defined?(::Ractor) && !USING_C_PARSER && !ENV["SKIP_RACTOR_TESTS"] && (ENV["TEST"].nil? || ENV["TEST"].include?("ractor_shareable")))
+
 require "rake"
 require "graphql/rake_task"
-require "benchmark"
 require "pry"
 require "minitest/autorun"
 require "minitest/focus"
 require "minitest/reporters"
+require "graphql/batch"
 
-Minitest::Reporters.use! Minitest::Reporters::DefaultReporter.new(color: true)
+# This is a test helper when a different value should be used during a test.
+# It helps with auditing differences between the two runtime modules.
+def if_exec_next(exec_next_value, legacy_value)
+  TESTING_EXEC_NEXT ? exec_next_value : legacy_value
+end
+
+def rdoc_parameter_names(comment, include_options: false)
+  section = nil
+  comment.lines.filter_map do |line|
+    if line.include?("**Parameters**")
+      section = :parameters
+      nil
+    elsif line.include?("**Options**")
+      section = :options
+      nil
+    elsif line.match?(/\*\*(?:Yields|Returns)\*\*/)
+      section = nil
+      nil
+    elsif section == :parameters || (include_options && section == :options)
+      line[/^\s*# - `([^`]+)`/, 1]&.sub(/\Akwargs\.:/, "")
+    end
+  end
+end
+
+module Minitest
+  class Test
+    # These tests are skipped but should be fixed at some point
+    def exec_next_TODO(message) # rubocop:disable Naming/MethodName
+      skip("TODO: " + message) if TESTING_EXEC_NEXT
+    end
+
+    # These tests are skipped and probably won't be fixed, but they're worth reviewing
+    def exec_next_WONTFIX(message) # rubocop:disable Naming/MethodName
+      skip("WONTFIX: " + message) if TESTING_EXEC_NEXT
+    end
+
+    # These tests don't run on legacy runtime
+    def exec_next_only(message)
+      skip("Exec-next only: #{message}") unless TESTING_EXEC_NEXT
+    end
+
+    # Exec-next annotates errors; use this to help produce those different error messages for assertions
+    def exec_next_error_message(field_path, message)
+      if TESTING_EXEC_NEXT
+        "Resolving #{field_path}: #{message}"
+      else
+        message
+      end
+    end
+  end
+end
+
+running_in_rubymine = ENV["RM_INFO"]
+unless running_in_rubymine
+  Minitest::Reporters.use! Minitest::Reporters::DefaultReporter.new(color: true)
+end
 
 Minitest::Spec.make_my_diffs_pretty!
 
+# In parallel workers, record how long each file took (in tmp/parallel_runtime_test.log)
+# so that the next `rake test:parallel` can balance its workers.
+if ENV["TEST_ENV_NUMBER"]
+  require "parallel_tests/test/runtime_logger"
+end
+
+module CheckWardenShape
+  DEFAULT_SHAPE = GraphQL::Schema::Warden.new(context: {}, schema: GraphQL::Schema).instance_variables
+
+  class CheckShape
+    def initialize(warden)
+      @warden = warden
+    end
+
+    def call(_obj_id)
+      ivars = @warden.instance_variables
+      if ivars != DEFAULT_SHAPE
+        raise <<-ERR
+Object Shape Failed (#{@warden.class}):
+  - Expected: #{DEFAULT_SHAPE.inspect}
+  - Actual: #{ivars.inspect}
+ERR
+      # else # To make sure it's running properly:
+      #   puts "OK Warden #{@warden.object_id}"
+      end
+    end
+  end
+
+  def prepare_ast
+    super
+    setup_finalizer
+  end
+
+  private
+
+  def setup_finalizer
+    if !@finalizer_defined
+      @finalizer_defined = true
+      if warden.is_a?(GraphQL::Schema::Warden)
+        ObjectSpace.define_finalizer(self, CheckShape.new(warden))
+      end
+    end
+  end
+end
+
+GraphQL::Query.prepend(CheckWardenShape)
 # Filter out Minitest backtrace while allowing backtrace from other libraries
 # to be shown.
 Minitest.backtrace_filter = Minitest::BacktraceFilter.new
-
-# This is for convenient access to metadata in test definitions
-assign_metadata_key = ->(target, key, value) { target.metadata[key] = value }
-assign_metadata_flag = ->(target, flag) { target.metadata[flag] = true }
-GraphQL::Schema.accepts_definitions(set_metadata: assign_metadata_key)
-GraphQL::BaseType.accepts_definitions(metadata: assign_metadata_key)
-GraphQL::BaseType.accepts_definitions(metadata2: assign_metadata_key)
-GraphQL::Field.accepts_definitions(metadata: assign_metadata_key)
-GraphQL::Argument.accepts_definitions(metadata: assign_metadata_key)
-GraphQL::Argument.accepts_definitions(metadata_flag: assign_metadata_flag)
-GraphQL::EnumType::EnumValue.accepts_definitions(metadata: assign_metadata_key)
 
 # Can be used as a GraphQL::Schema::Warden for some purposes, but allows nothing
 module NothingWarden
@@ -58,27 +193,22 @@ def testing_mongoid?
   defined?(::Mongoid)
 end
 
-# Load support files
-Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each do |f|
-  require f
+def testing_redis?
+  defined?(::Redis)
 end
 
 if testing_rails?
   require "integration/rails/spec_helper"
 end
 
-# Load dependencies
-['Mongoid', 'Rails'].each do |integration|
-  begin
-    Object.const_get(integration)
-    if ENV["TEST"].nil?
-      Dir["spec/integration/#{integration.downcase}/**/*.rb"].each do |f|
-        require f.sub("spec/", "")
-      end
-    end
-  rescue NameError
-    # ignore
-  end
+if testing_mongoid?
+  require "integration/mongoid/star_trek/data"
+  require "integration/mongoid/star_trek/schema"
+end
+
+# Load support files
+Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each do |f|
+  require f
 end
 
 def star_trek_query(string, variables={}, context: {})
@@ -115,11 +245,54 @@ module TestTracing
 
     def trace(key, data)
       data[:key] = key
-      data[:path] ||= data.key?(:context) ? data[:context].path : nil
       result = yield
       data[:result] = result
       traces << data
       result
+    end
+  end
+end
+
+
+if !USING_C_PARSER && defined?(GraphQL::CParser::Parser)
+  raise "Load error: didn't opt in to C parser but GraphQL::CParser::Parser was defined"
+end
+
+if TESTING_EXEC_NEXT
+  GraphQL::Schema.use GraphQL::Execution::Next, as_default: true
+end
+def assert_warns(warning, printing = "")
+  return_val = nil
+  stdout, stderr = capture_io { return_val = yield }
+  assert_equal warning, stderr, "It produced the expected stderr"
+  assert_equal stdout, printing, "It produced the expected stdout"
+  return_val
+end
+
+module Minitest
+  class Test
+    def self.it_dataloads(message, &block)
+      it(message) do
+        GraphQL::Dataloader.with_dataloading do |d|
+          self.instance_exec(d, &block)
+        end
+      end
+    end
+  end
+
+  module Assertions
+    def assert_graphql_equal(data1, data2, message = "GraphQL Result was equal")
+      case data1
+      when Hash
+        assert_equal(data1, data2.to_h, message)
+        assert_equal(data1.keys, data2.keys, "Order of keys matched (#{message})")
+      when Array
+        data1.each_with_index do |item1, idx|
+          assert_graphql_equal(item1, data2[idx], message + "[Item #{idx + 1}] ")
+        end
+      else
+        raise ArgumentError, "assert_graphql_equal doesn't support #{data1.class} yet"
+      end
     end
   end
 end

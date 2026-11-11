@@ -16,7 +16,7 @@ module InstrumentationSpec
   end
 
   class Query < GraphQL::Schema::Object
-    field :some_field, [SomeInterface], null: true
+    field :some_field, [SomeInterface]
 
     def some_field
       nil
@@ -26,15 +26,5 @@ module InstrumentationSpec
   class Schema < GraphQL::Schema
     query Query
     orphan_types [SomeType]
-  end
-end
-
-describe GraphQL::Schema::Member::Instrumentation do
-  describe "resolving nullable interface lists to nil" do
-    let(:query) { "query { someField { neverCalled } }"}
-    it "returns nil instead of failing" do
-      result = InstrumentationSpec::Schema.execute(query)
-      assert_nil(result["someField"])
-    end
   end
 end

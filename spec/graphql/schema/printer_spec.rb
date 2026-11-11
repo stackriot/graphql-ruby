@@ -8,9 +8,14 @@ describe GraphQL::Schema::Printer do
       field :id, ID, null: false
     end
 
+    class HiddenDirective < GraphQL::Schema::Directive
+      def self.visible?(ctx); false; end
+      locations(GraphQL::Schema::Directive::ENUM_VALUE)
+    end
+
     class Choice < GraphQL::Schema::Enum
       value "FOO", value: :foo
-      value "BAR", value: :bar
+      value "BAR", value: :bar, directives: { HiddenDirective => {} }
       value "BAZ", deprecation_reason: <<-REASON
 Use "BAR" instead.
 
@@ -30,7 +35,7 @@ REASON
       argument :int, Int, required: false
       argument :float, Float, required: false
       argument :bool, Boolean, required: false
-      argument :enum, Choice, required: false, default_value: :foo
+      argument :some_enum, Choice, required: false, default_value: :foo
       argument :sub, [Sub, null: true], required: false
     end
 
@@ -45,7 +50,7 @@ REASON
       field :id, ID, null: false
       field :title, String, null: false
       field :body, String, null: false
-      field :comments, [Comment], null: true
+      field :comments, [Comment]
       field :comments_count, Int, null: false, deprecation_reason: "Use \"comments\".", camelize: false
     end
 
@@ -67,22 +72,43 @@ REASON
       possible_types Image, Audio
     end
 
+    class MediaRating < GraphQL::Schema::Enum
+      value :AWESOME
+      value :MEH
+      value :BOO_HISS
+    end
+
+
+    class NoFields < GraphQL::Schema::Object
+      has_no_fields(true)
+    end
+
+    class NoArguments < GraphQL::Schema::InputObject
+      has_no_arguments(true)
+    end
+
     class Query < GraphQL::Schema::Object
       description "The query root of this schema"
 
-      field :post, Post, null: true do
-        argument :id, ID, required: true, description: "Post ID"
-        argument :varied, Varied, required: false, default_value: { id: "123", int: 234, float: 2.3, enum: :foo, sub: [{ string: "str" }] }
-        argument :varied_with_nulls, Varied, required: false, default_value: { id: nil, int: nil, float: nil, enum: nil, sub: nil }
+      field :post, Post do
+        argument :id, ID, description: "Post ID"
+        argument :varied, Varied, required: false, default_value: { id: "123", int: 234, float: 2.3, some_enum: :foo, sub: [{ string: "str" }] }
+        argument :varied_with_nulls, Varied, required: false, default_value: { id: nil, int: nil, float: nil, some_enum: nil, sub: nil }
         argument :deprecated_arg, String, required: false, deprecation_reason: "Use something else"
       end
+
+      field :no_fields_type, NoFields do
+        argument :no_arguments_input, NoArguments
+      end
+
+      field :example_media, Media
     end
 
     class CreatePost < GraphQL::Schema::RelayClassicMutation
       description "Create a blog post"
-      argument :title, String, required: true
-      argument :body, String, required: true
-      field :post, Post, null: true
+      argument :title, String
+      argument :body, String
+      field :post, Post
     end
 
     class Mutation < GraphQL::Schema::Object
@@ -90,15 +116,19 @@ REASON
     end
 
     class Subscription < GraphQL::Schema::Object
-      field :post, Post, null: true do
-        argument :id, ID, required: true
+      field :post, Post do
+        argument :id, ID
       end
     end
 
     query(Query)
     mutation(Mutation)
     subscription(Subscription)
-    orphan_types [Media]
+    extra_types [MediaRating]
+
+    if !use_visibility_profile?
+      use GraphQL::Schema::Warden
+    end
   end
 
   let(:schema) { PrinterTestSchema }
@@ -106,7 +136,7 @@ REASON
   describe ".print_introspection_schema" do
     it "returns the schema as a string for the introspection types" do
       # From https://github.com/graphql/graphql-js/blob/6a0e00fe46951767287f2cc62e1a10b167b2eaa6/src/utilities/__tests__/schemaPrinter-test.js#L599
-      expected = <<SCHEMA
+      expected = <<-GRAPHQL
 schema {
   query: Root
 }
@@ -134,6 +164,11 @@ directive @include(
 ) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 
 """
+Requires that exactly one field must be supplied and that field must not be `null`.
+"""
+directive @oneOf on INPUT_OBJECT
+
+"""
 Directs the executor to skip this field or fragment when the `if` argument is true.
 """
 directive @skip(
@@ -142,6 +177,16 @@ directive @skip(
   """
   if: Boolean!
 ) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+
+"""
+Exposes a URL that specifies the behavior of this scalar.
+"""
+directive @specifiedBy(
+  """
+  The URL that specifies the behavior of this scalar.
+  """
+  url: String!
+) on SCALAR
 
 """
 A Directive provides a way to describe alternate runtime execution and type validation behavior in a GraphQL document.
@@ -154,6 +199,7 @@ to the executor.
 type __Directive {
   args(includeDeprecated: Boolean = false): [__InputValue!]!
   description: String
+  isRepeatable: Boolean
   locations: [__DirectiveLocation!]!
   name: String!
   onField: Boolean! @deprecated(reason: "Use `locations`.")
@@ -255,6 +301,11 @@ enum __DirectiveLocation {
   Location adjacent to a union definition.
   """
   UNION
+
+  """
+  Location adjacent to a variable definition.
+  """
+  VARIABLE_DEFINITION
 }
 
 """
@@ -305,6 +356,8 @@ available types and directives on the server, as well as the entry points for
 query, mutation, and subscription operations.
 """
 type __Schema {
+  description: String
+
   """
   A list of all directives supported by this server.
   """
@@ -347,10 +400,12 @@ type __Type {
   fields(includeDeprecated: Boolean = false): [__Field!]
   inputFields(includeDeprecated: Boolean = false): [__InputValue!]
   interfaces: [__Type!]
+  isOneOf: Boolean!
   kind: __TypeKind!
   name: String
   ofType: __Type
   possibleTypes: [__Type!]
+  specifiedByURL: String
 }
 
 """
@@ -397,7 +452,7 @@ enum __TypeKind {
   """
   UNION
 }
-SCHEMA
+GRAPHQL
       assert_equal expected.chomp, GraphQL::Schema::Printer.print_introspection_schema
     end
   end
@@ -436,19 +491,19 @@ SCHEMA
       custom_subscription = Class.new(PrinterTestSchema::Subscription) { graphql_name "MySubscriptionRoot" }
       custom_schema = Class.new(PrinterTestSchema) { subscription(custom_subscription) }
 
-      expected = <<SCHEMA
+      expected = <<GRAPHQL
 schema {
   query: Query
   mutation: Mutation
   subscription: MySubscriptionRoot
 }
-SCHEMA
+GRAPHQL
 
       assert_match expected, GraphQL::Schema::Printer.print_schema(custom_schema)
     end
 
     it "returns the schema as a string for the defined types" do
-      expected = <<SCHEMA
+      expected = <<GRAPHQL
 type Audio {
   duration: Int!
   id: ID!
@@ -483,7 +538,7 @@ input CreatePostInput {
 }
 
 """
-Autogenerated return type of CreatePost
+Autogenerated return type of CreatePost.
 """
 type CreatePostPayload {
   """
@@ -505,6 +560,12 @@ Media objects
 """
 union Media = Audio | Image
 
+enum MediaRating {
+  AWESOME
+  BOO_HISS
+  MEH
+}
+
 type Mutation {
   """
   Create a blog post
@@ -516,6 +577,10 @@ type Mutation {
     input: CreatePostInput!
   ): CreatePostPayload
 }
+
+input NoArguments
+
+type NoFields
 
 interface Node {
   id: ID!
@@ -536,6 +601,8 @@ type Post {
 The query root of this schema
 """
 type Query {
+  exampleMedia: Media
+  noFieldsType(noArgumentsInput: NoArguments!): NoFields
   post(
     deprecatedArg: String @deprecated(reason: "Use something else")
 
@@ -543,8 +610,8 @@ type Query {
     Post ID
     """
     id: ID!
-    varied: Varied = {id: "123", int: 234, float: 2.3, enum: FOO, sub: [{string: "str"}]}
-    variedWithNulls: Varied = {id: null, int: null, float: null, enum: null, sub: null}
+    varied: Varied = {id: "123", int: 234, float: 2.3, someEnum: FOO, sub: [{string: "str"}]}
+    variedWithNulls: Varied = {id: null, int: null, float: null, someEnum: null, sub: null}
   ): Post
 }
 
@@ -569,13 +636,13 @@ type Subscription {
 
 input Varied {
   bool: Boolean
-  enum: Choice = FOO
   float: Float
   id: ID
   int: Int
+  someEnum: Choice = FOO
   sub: [Sub]
 }
-SCHEMA
+GRAPHQL
 
       assert_equal expected, GraphQL::Schema::Printer.print_schema(schema)
     end
@@ -602,6 +669,12 @@ SCHEMA
 
   it "applies an `only` filter" do
     expected = <<SCHEMA
+enum MediaRating {
+  AWESOME
+  BOO_HISS
+  MEH
+}
+
 """
 A blog post
 """
@@ -619,34 +692,35 @@ type Query {
 }
 SCHEMA
 
-    only_filter = ->(member, ctx) {
-      case member
-      when Module
-        if !member.respond_to?(:kind)
-          true
-        else
-          case member.kind.name
-          when "SCALAR"
-            true
-          when "OBJECT", "UNION", "INTERFACE"
-            ctx[:names].include?(member.graphql_name)
+    custom_filter_schema = Class.new(schema) do
+      use GraphQL::Schema::Warden if ADD_WARDEN
+      def self.visible?(member, ctx)
+        case member
+        when Module
+          if !member.respond_to?(:kind)
+            super
           else
-            false
+            case member.kind.name
+            when "SCALAR"
+              true
+            when "OBJECT", "UNION", "INTERFACE"
+              ctx[:names].include?(member.graphql_name) || member.introspection?
+            else
+              member.introspection?
+            end
+          end
+        when GraphQL::Schema::Argument
+          member.graphql_name != "id"
+        else
+          if member.respond_to?(:deprecation_reason)
+            member.deprecation_reason.nil?
           end
         end
-      when GraphQL::Schema::Argument
-        member.graphql_name != "id"
-      else
-        if member.respond_to?(:deprecation_reason)
-          member.deprecation_reason.nil?
-        end
       end
-    }
-
+    end
     context = { names: ["Query", "Post"] }
-    assert_equal expected, schema.to_definition(context: context, only: only_filter)
+    assert_equal expected, custom_filter_schema.to_definition(context: context)
   end
-
 
   it "applies an `except` filter" do
     expected = <<SCHEMA
@@ -677,7 +751,7 @@ input CreatePostInput {
 }
 
 """
-Autogenerated return type of CreatePost
+Autogenerated return type of CreatePost.
 """
 type CreatePostPayload {
   """
@@ -692,6 +766,12 @@ Media objects
 """
 union Media = Audio
 
+enum MediaRating {
+  AWESOME
+  BOO_HISS
+  MEH
+}
+
 type Mutation {
   """
   Create a blog post
@@ -703,6 +783,10 @@ type Mutation {
     input: CreatePostInput!
   ): CreatePostPayload
 }
+
+input NoArguments
+
+type NoFields
 
 interface Node {
   id: ID!
@@ -722,6 +806,8 @@ type Post {
 The query root of this schema
 """
 type Query {
+  exampleMedia: Media
+  noFieldsType(noArgumentsInput: NoArguments!): NoFields
   post(
     """
     Post ID
@@ -735,12 +821,15 @@ type Subscription {
 }
 SCHEMA
 
-    except_filter = ->(member, ctx) {
-      ctx[:names].include?(member.graphql_name) || (member.respond_to?(:deprecation_reason) && member.deprecation_reason)
-    }
+    custom_filter_schema = Class.new(schema) do
+      use GraphQL::Schema::Warden if ADD_WARDEN
+      def self.visible?(member, ctx)
+        super && (!(ctx[:names].include?(member.graphql_name) || (member.respond_to?(:deprecation_reason) && member.deprecation_reason)))
+      end
+    end
 
     context = { names: ["Varied", "Image", "Sub"] }
-    assert_equal expected, schema.to_definition(context: context, except: except_filter)
+    assert_equal expected, custom_filter_schema.to_definition(context: context)
   end
 
   describe "#print_type" do
@@ -796,7 +885,7 @@ SCHEMA
 
       class Query < GraphQL::Schema::Object
         description "The query root of this schema"
-        field :example, SomeType, null: true do
+        field :example, SomeType do
           argument :input, SomeType, default_value: BackingObject.new("Howdy"), required: false
         end
 
@@ -890,5 +979,61 @@ enum Thing {
 
     schema = GraphQL::Schema.from_definition(input)
     assert_equal input, GraphQL::Schema::Printer.print_schema(schema)
+  end
+
+  describe "when Union is used in extra_types" do
+    it "can be included" do
+      obj_1 = Class.new(GraphQL::Schema::Object) { graphql_name("Obj1"); field(:f1, String)}
+      obj_2 = Class.new(GraphQL::Schema::Object) { graphql_name("Obj2"); field(:f2, obj_1) }
+      union_type = Class.new(GraphQL::Schema::Union) do
+        graphql_name "Union1"
+        possible_types(obj_1, obj_2)
+      end
+
+      assert_equal "union Union1 = Obj1 | Obj2\n", Class.new(GraphQL::Schema) { extra_types(union_type) }.to_definition
+
+      expected_defn = <<~GRAPHQL
+        type Obj1 {
+          f1: String
+        }
+
+        type Obj2 {
+          f2: Obj1
+        }
+
+        union Union1 = Obj1 | Obj2
+      GRAPHQL
+      assert_equal expected_defn, Class.new(GraphQL::Schema) { extra_types(union_type, obj_1, obj_2) }.to_definition
+    end
+  end
+
+  it "works with interfaces and @oneOf directive" do
+    class SomeInputObject < GraphQL::Schema::InputObject
+      one_of
+      argument :a, Integer, required: false
+      argument :b, String, required: false
+    end
+
+    module SomeInterface
+      include GraphQL::Schema::Interface
+      field :id, ID
+    end
+
+    class SomeObject < GraphQL::Schema::Object
+      implements SomeInterface
+      field :some_field, Boolean do
+        argument :input, SomeInputObject
+      end
+    end
+
+    class SomeQueryType < GraphQL::Schema::Object
+      field :some_object, SomeObject, method: :some_object
+    end
+
+    class SomeSchema < GraphQL::Schema
+      query SomeQueryType
+    end
+
+    GraphQL::Schema::Printer.new(SomeSchema).print_type(SomeObject)
   end
 end

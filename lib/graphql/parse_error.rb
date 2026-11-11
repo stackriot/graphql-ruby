@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   class ParseError < GraphQL::Error
     attr_reader :line, :col, :query

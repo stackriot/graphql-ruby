@@ -35,7 +35,7 @@ describe GraphQL::Pagination::Connections do
   end
 
   it "returns connections by class, using inherited mappings and local overrides" do
-    field_defn = OpenStruct.new(has_max_page_size?: true, max_page_size: 10, type: GraphQL::Types::Relay::BaseConnection)
+    field_defn = OpenStruct.new(has_max_page_size?: true, max_page_size: 10, has_default_page_size?: true, default_page_size: 5, type: GraphQL::Types::Relay::BaseConnection)
 
     set_wrapper = schema.connections.wrap(field_defn, nil, Set.new([1,2,3]), {}, nil)
     assert_instance_of SetConnection, set_wrapper
@@ -84,18 +84,26 @@ describe GraphQL::Pagination::Connections do
     end
 
     class Query < GraphQL::Schema::Object
-      field :things, [ThingConnection], null: false
+      field :things, [ThingConnection], null: false, resolve_static: true
 
-      def things
+      def self.things(context)
         [{name: "thing1"}, {name: "thing2"}]
       end
 
-      field :things2, [ThingConnection], null: false, connection: false
+      def things
+        self.class.things(context)
+      end
 
-      def things2
+      field :things2, [ThingConnection], null: false, connection: false, resolve_static: true
+
+      def self.things2(context)
         [
           BadThing.new
         ]
+      end
+
+      def things2
+        self.class.things2(context)
       end
     end
 
@@ -103,8 +111,9 @@ describe GraphQL::Pagination::Connections do
   end
 
   it "raises a helpful error when it fails to implement a connection" do
+    exec_next_TODO "Should exec-next raise an error like this too?"
     err = assert_raises GraphQL::Execution::Interpreter::ListResultFailedError do
-      pp ConnectionErrorTestSchema.execute("{ things { name } }")
+      ConnectionErrorTestSchema.execute("{ things { name } }")
     end
 
     assert_includes err.message, "Failed to build a GraphQL list result for field `Query.things` at path `things`."
@@ -117,25 +126,38 @@ describe GraphQL::Pagination::Connections do
       ConnectionErrorTestSchema.execute("{ things2 { name } }")
     end
 
-    assert_includes err.message, "undefined method `no_such_method' for <BadThing!>"
+    expected_message = if RUBY_VERSION >= "3.4"
+      "undefined method 'no_such_method' for an instance of ConnectionErrorTestSchema::BadThing"
+    elsif RUBY_VERSION >= "3.3"
+      "undefined method `no_such_method' for an instance of ConnectionErrorTestSchema::BadThing"
+    else
+      "undefined method `no_such_method' for <BadThing!>"
+    end
+
+    assert_includes err.message, expected_message
   end
 
   it "uses a field's `max_page_size: nil` configuration" do
     user_type = Class.new(GraphQL::Schema::Object) do
       graphql_name 'User'
-      field :name, String, null: false
+      field :name, String, null: false, hash_key: :name
     end
 
     query_type = Class.new(GraphQL::Schema::Object) do
       graphql_name 'Query'
-      field :users, user_type.connection_type, null: true, max_page_size: nil
-      def users
+      field :users, user_type.connection_type, max_page_size: nil, resolve_static: true
+
+      def self.users(context)
         [{ name: 'Yoda' }, { name: 'Anakin' }, { name: 'Obi Wan' }]
+      end
+
+      def users
+        self.class.users(context)
       end
     end
 
     schema = Class.new(GraphQL::Schema) do
-      # This value should be overriden by `max_page_size: nil` in the field definition above
+      # This value should be overridden by `max_page_size: nil` in the field definition above
       default_max_page_size 2
       query(query_type)
     end
@@ -155,10 +177,14 @@ describe GraphQL::Pagination::Connections do
 
   class SingleNewConnectionSchema < GraphQL::Schema
     class Query < GraphQL::Schema::Object
-      field :strings, GraphQL::Types::String.connection_type, null: false
+      field :strings, GraphQL::Types::String.connection_type, null: false, resolve_static: true
+
+      def self.strings(context)
+        GraphQL::Pagination::ArrayConnection.new(["a", "b", "c"])
+      end
 
       def strings
-        GraphQL::Pagination::ArrayConnection.new(["a", "b", "c"])
+        self.class.strings(context)
       end
     end
 

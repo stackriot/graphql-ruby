@@ -22,43 +22,6 @@ describe GraphQL::Schema::Union do
     end
   end
 
-  describe ".to_graphql" do
-    it "creates a UnionType" do
-      union = Class.new(GraphQL::Schema::Union) do
-        possible_types Jazz::Musician, Jazz::Ensemble
-
-        def self.name
-          "MyUnion"
-        end
-      end
-      union_type = union.to_graphql
-      assert_equal "MyUnion", union_type.name
-      assert_equal [Jazz::Musician.to_graphql, Jazz::Ensemble.to_graphql], union_type.possible_types
-      assert_nil union_type.resolve_type_proc
-    end
-
-    it "can specify a resolve_type method" do
-      union = Class.new(GraphQL::Schema::Union) do
-        def self.resolve_type(_object, _context)
-          "MyType"
-        end
-
-        def self.name
-          "MyUnion"
-        end
-      end
-      union_type = union.to_graphql
-      assert_equal "MyType", union_type.resolve_type_proc.call(nil, nil)
-    end
-
-    it "passes on the possible type filter" do
-      union_type = union.to_graphql
-      expected_type = GraphQL::BaseType.resolve_related_type(Jazz::Musician)
-
-      assert_equal [expected_type], union_type.possible_types(hide_ensemble: true)
-    end
-  end
-
   describe "in queries" do
     it "works" do
       query_str = <<-GRAPHQL
@@ -79,7 +42,7 @@ describe GraphQL::Schema::Union do
 
       res = Jazz::Schema.execute(query_str)
       expected_data = { "name" => "Bela Fleck and the Flecktones" }
-      assert_equal expected_data, res["data"]["nowPlaying"]
+      assert_graphql_equal expected_data, res["data"]["nowPlaying"]
     end
 
     it "does not allow querying filtered types" do
@@ -104,7 +67,7 @@ describe GraphQL::Schema::Union do
       assert_equal "Fragment on Ensemble can't be spread inside PerformingAct", res.to_h["errors"].first["message"]
     end
 
-    it "can cast the object after resolving the type" do
+    describe "type resolution" do
       Box = Struct.new(:value)
 
       class Schema < GraphQL::Schema
@@ -112,39 +75,193 @@ describe GraphQL::Schema::Union do
           field :a, String, null: false, method: :itself
         end
 
-        class MyUnion < GraphQL::Schema::Union
-          possible_types A
+        class B < GraphQL::Schema::Object
+          field :b, String, method: :itself
+        end
+
+        class C < GraphQL::Schema::Object
+          field :c, Boolean, method: :itself
+        end
+
+        class UnboxedUnion < GraphQL::Schema::Union
+          possible_types A, C
 
           def self.resolve_type(object, ctx)
-            [A, object.value]
+            case object
+            when FalseClass
+              C
+            else
+              A
+            end
+          end
+        end
+
+        class BoxedUnion < GraphQL::Schema::Union
+          possible_types A, B, C
+
+          def self.resolve_type(object, ctx)
+            case object.value
+            when "return-nil"
+              [B, nil]
+            when FalseClass
+              [C, object.value]
+            else
+              [A, object.value]
+            end
           end
         end
 
         class Query < GraphQL::Schema::Object
-          field :my_union, MyUnion, null: false
+          field :boxed_union, BoxedUnion, resolve_static: true
 
-          def my_union
+          def self.boxed_union(context)
             Box.new(context[:value])
+          end
+
+          def boxed_union
+            self.class.boxed_union(context)
+          end
+
+          field :unboxed_union, UnboxedUnion, resolve_static: true
+
+          def self.unboxed_union(context)
+            context[:value]
+          end
+
+          def unboxed_union
+            self.class.unboxed_union(context)
           end
         end
 
         query(Query)
       end
 
-      query_str = <<-GRAPHQL
-      {
-        myUnion {
-          ... on A { a }
-        }
-      }
-      GRAPHQL
+      describe "two-value resolution" do
+        it "can cast the object after resolving the type" do
 
-      res = Schema.execute(query_str, context: { value: "unwrapped" })
+          query_str = <<-GRAPHQL
+          {
+            boxedUnion {
+              ... on A { a }
+            }
+          }
+          GRAPHQL
 
-      assert_equal({
-        'data' => { 'myUnion' => { 'a' => 'unwrapped' } }
-      }, res.to_h)
+          res = Schema.execute(query_str, context: { value: "unwrapped" })
+
+          assert_equal({
+            'data' => { 'boxedUnion' => { 'a' => 'unwrapped' } }
+          }, res.to_h)
+        end
+
+        it "uses `false` when returned from resolve_type" do
+          query_str = <<-GRAPHQL
+          {
+            boxedUnion {
+              ... on C { c }
+            }
+          }
+          GRAPHQL
+
+          res = Schema.execute(query_str, context: { value: false })
+
+          assert_equal({
+            'data' => { 'boxedUnion' => { 'c' => false } }
+          }, res.to_h)
+        end
+
+        it "uses `nil` when returned from resolve_type" do
+          query_str = <<-GRAPHQL
+          {
+            boxedUnion {
+              ... on B { b }
+            }
+          }
+          GRAPHQL
+
+          res = Schema.execute(query_str, context: { value: "return-nil" })
+
+          assert_equal({
+            'data' => { 'boxedUnion' => { 'b' => nil } }
+          }, res.to_h)
+        end
+      end
+
+      describe "single-value resolution" do
+        it "can cast the object after resolving the type" do
+
+          query_str = <<-GRAPHQL
+          {
+            unboxedUnion {
+              ... on A { a }
+            }
+          }
+          GRAPHQL
+
+          res = Schema.execute(query_str, context: { value: "string" })
+
+          assert_equal({
+            'data' => { 'unboxedUnion' => { 'a' => 'string' } }
+          }, res.to_h)
+        end
+
+        it "works with literal false values" do
+          query_str = <<-GRAPHQL
+          {
+            unboxedUnion {
+              ... on C { c }
+            }
+          }
+          GRAPHQL
+
+          res = Schema.execute(query_str, context: { value: false })
+
+          assert_equal({
+            'data' => { 'unboxedUnion' => { 'c' => false } }
+          }, res.to_h)
+        end
+      end
     end
+  end
+
+  it "doesn't allow adding non-object types" do
+    object_type = Class.new(GraphQL::Schema::Object) do
+      graphql_name "SomeObject"
+    end
+
+    err = assert_raises ArgumentError do
+      Class.new(GraphQL::Schema::Union) do
+        graphql_name "SomeUnion"
+        possible_types object_type, GraphQL::Types::Int
+      end
+    end
+    expected_message = "Union possible_types can only be object types (not SCALAR, "
+    assert_includes err.message, expected_message
+
+    input_type = Class.new(GraphQL::Schema::InputObject) do
+      graphql_name "SomeInput"
+      argument :arg, GraphQL::Types::Int
+    end
+
+    err = assert_raises ArgumentError do
+      Class.new(GraphQL::Schema::Union) do
+        graphql_name "SomeUnion"
+        possible_types object_type, input_type
+      end
+    end
+
+    expected_message = "Union possible_types can only be object types (not INPUT_OBJECT, "
+    assert_includes err.message, expected_message
+
+    err = assert_raises ArgumentError do
+      Class.new(GraphQL::Schema::Union) do
+        graphql_name "SomeUnion"
+        possible_types object_type, 1234
+      end
+    end
+
+    expected_message = "Union possible_types can only be class-based GraphQL types (not 1234 (Integer))."
+    assert_includes err.message, expected_message
   end
 
   it "doesn't allow adding interface" do
@@ -173,11 +290,13 @@ describe GraphQL::Schema::Union do
       possible_types object_type, GraphQL::Schema::LateBoundType.new("SomeInterface")
     end
 
+    object_type.field(:u, union_type)
+    object_type.field(:i, interface_type)
+
     err2 = assert_raises ArgumentError do
       Class.new(GraphQL::Schema) do
         query(object_type)
-        orphan_types(union_type, interface_type)
-      end
+      end.to_definition
     end
 
     assert_match expected_message, err2.message
@@ -221,7 +340,7 @@ describe GraphQL::Schema::Union do
             { "type" => "Cow", "name" => "Gilly" }
           ]
         }
-        assert_equal expected_result, result["data"]
+        assert_graphql_equal expected_result, result["data"]
       end
     end
 
@@ -248,7 +367,7 @@ describe GraphQL::Schema::Union do
           {"dairyName"=>"Cheese"},
           {"dairyName"=>"Milk", "bevName"=>"Milk", "flavors"=>["Natural", "Chocolate", "Strawberry"]},
         ]
-        assert_equal expected_result, result["data"]["allDairy"]
+        assert_graphql_equal expected_result, result["data"]["allDairy"]
       end
     end
 
@@ -293,6 +412,64 @@ describe GraphQL::Schema::Union do
           end
         end
       end
+    end
+  end
+
+  describe "use with loads:" do
+    class UnionLoadsSchema < GraphQL::Schema
+      class Image < GraphQL::Schema::Object
+        field :title, String, hash_key: :title
+      end
+
+      class Video < GraphQL::Schema::Object
+        field :title, String, hash_key: :title
+      end
+
+      class Post < GraphQL::Schema::Object
+        field :title, String, hash_key: :title
+      end
+
+      class MediaItem < GraphQL::Schema::Union
+        possible_types Image, Video
+      end
+
+      class Query < GraphQL::Schema::Object
+        field :media_item_type, String, resolve_static: true do
+          argument :id, ID, loads: MediaItem, as: :media_item
+        end
+
+        def self.media_item_type(context, media_item:)
+          media_item[:type]
+        end
+
+        def media_item_type(media_item:)
+          self.class.media_item_type(context, media_item: media_item)
+        end
+      end
+
+      query(Query)
+
+      def self.object_from_id(id, ctx)
+        type, title = id.split("/")
+        { type: type, title: title }
+      end
+
+      def self.resolve_type(abs_type, obj, ctx)
+        UnionLoadsSchema.const_get(obj[:type])
+      end
+    end
+
+    it "restricts to members of the union" do
+      query_str = "query($mediaId: ID!) { mediaItemType(id: $mediaId) }"
+      res = UnionLoadsSchema.execute(query_str, variables: { mediaId: "Image/Family Photo" })
+      assert_equal "Image", res["data"]["mediaItemType"]
+
+      res = UnionLoadsSchema.execute(query_str, variables: { mediaId: "Video/Christmas Pageant" })
+      assert_equal "Video", res["data"]["mediaItemType"]
+
+      res = UnionLoadsSchema.execute(query_str, variables: { mediaId: "Post/Year in Review" })
+      assert_nil res["data"]["mediaItemType"]
+      assert_equal ["No object found for `id: \"Post/Year in Review\"`"], res["errors"].map { |e| e["message"] }
     end
   end
 end

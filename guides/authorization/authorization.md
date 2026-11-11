@@ -1,11 +1,4 @@
----
-layout: guide
-search: true
-section: Authorization
-title: Authorization
-desc: During execution, check if the current user has permission to access retrieved objects.
-index: 3
----
+# Authorization
 
 While a query is running, you can check each object to see whether the current user is authorized to interact with that object. If the user is _not_ authorized, you can handle the case with an error.
 
@@ -16,6 +9,8 @@ Schema members have `authorized?` methods which will be called during execution:
 - Type classes have `.authorized?(object, context)` class methods
 - Fields have `#authorized?(object, args, context)` instance methods
 - Arguments have `#authorized?(object, arg_value, context)` instance methods
+- Mutations and Resolvers have `.authorized?(object, context)` class methods and `#authorized?(args)` instance methods
+- Enum values have `#authorized?(context)` instance methods
 
 These methods are called with:
 
@@ -46,9 +41,9 @@ Now, whenever an object of type `Friendship` is going to be returned to the clie
 Field `#authorized?` methods are called before resolving a field, for example:
 
 ```ruby
-class Types::BaseField < GraphQL::Field
+class Types::BaseField < GraphQL::Schema::Field
   # Pass `field ..., require_admin: true` to reject non-admin users from a given field
-  def initialize(*args, **kwargs, require_admin: false, &block)
+  def initialize(*args, require_admin: false, **kwargs, &block)
     @require_admin = require_admin
     super(*args, **kwargs, &block)
   end
@@ -60,15 +55,15 @@ class Types::BaseField < GraphQL::Field
 end
 ```
 
-For this to work, the base field class must be {% internal_link "configured with other GraphQL types", "/type_definitions/extensions.html#customizing-fields" %}.
+For this to work, the base field class must be [configured with other GraphQL types](/type_definitions/extensions.html#customizing-fields).
 
 #### Argument Authorization
 
 Argument `#authorized?` hooks are called before resolving the field that the argument belongs to. For example:
 
 ```ruby
-class Types::BaseArgument < GraphQL::Field
-  def initialize(*args, **kwargs, require_logged_in: false, &block)
+class Types::BaseArgument < GraphQL::Schema::Argument
+  def initialize(*args, require_logged_in: false, **kwargs, &block)
     @require_logged_in = require_logged_in
     super(*args, **kwargs, &block)
   end
@@ -83,11 +78,23 @@ class Types::BaseArgument < GraphQL::Field
 end
 ```
 
-For this to work, the base argument class must be {% internal_link "configured with other GraphQL types", "/type_definitions/extensions.html#customizing-arguments" %}.
+For this to work, the base argument class must be [configured with other GraphQL types](/type_definitions/extensions.html#customizing-arguments).
+
+## Mutation Authorization
+
+See [Mutation Authorization](/mutations/mutation_authorization.html#can-this-user-perform-this-action) in the Mutation Guides.
+
+## Enum Value Authorization
+
+[GraphQL::Schema::EnumValue#authorized?](rdoc-ref:GraphQL::Schema::EnumValue#authorized?) is called when client input is received and when the schema returns values to the client.
+
+For authorizing input, if a value's `#authorized?` method returns false, then a [GraphQL::UnauthorizedEnumValueError](rdoc-ref:GraphQL::UnauthorizedEnumValueError) is raised. It passed to your schema's `.unauthorized_object` hook, where you can handle it another way if you want.
+
+For authorizing return values, if an outgoing value's `#authorized?` method returns false, then a [GraphQL::Schema::Enum::UnresolvedValueError](rdoc-ref:GraphQL::Schema::Enum::UnresolvedValueError) is raised, which crashes the query. In this case, you should modify your field or resolver to _not_ return this value to an unauthorized viewer. (In this case, the error isn't returned to the viewer because the viewer can't do anything about it -- it's a developer-facing issue instead.)
 
 ## Handling Unauthorized Objects
 
-By default, GraphQL-Ruby silently replaces unauthorized objects with `nil`, as if they didn't exist. You can customize this behavior by implementing {{ "Schema.unauthorized_object" | api_doc }} in your schema class, for example:
+By default, GraphQL-Ruby silently replaces unauthorized objects with `nil`, as if they didn't exist. You can customize this behavior by implementing [Schema.unauthorized_object](rdoc-ref:GraphQL::Schema.unauthorized_object) in your schema class, for example:
 
 ```ruby
 class MySchema < GraphQL::Schema

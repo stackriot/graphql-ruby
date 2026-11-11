@@ -9,15 +9,34 @@ describe GraphQL::Schema::Argument do
       end
     end
 
+    class ContextInput < GraphQL::Schema::InputObject
+      argument :context, String
+    end
+
+    class LoadUnauthorizedInstruments < GraphQL::Schema::Resolver
+      argument :ids, [ID], as: :instruments, required: false, loads: UnauthorizedInstrumentType
+
+      def load_instruments(ids)
+        ids.map { |id| context.schema.object_from_id(id, context).call }
+      end
+
+      type Integer, null: true
+
+      def resolve(instruments:)
+        instruments.size
+      end
+    end
+
     class Query < GraphQL::Schema::Object
-      field :field, String, null: true do
-        argument :arg, String, description: "test", required: false
+      field :field, String, resolve_static: :run_field do
+        argument :arg, String, description: "test", comment: "test comment", required: false
         argument :deprecated_arg, String, deprecation_reason: "don't use me!", required: false
 
         argument :arg_with_block, String, required: false do
           description "test"
+          comment "test comment"
         end
-        argument :required_with_default_arg, Int, required: true, default_value: 1
+        argument :required_with_default_arg, Int, default_value: 1
         argument :aliased_arg, String, required: false, as: :renamed
         argument :prepared_arg, Int, required: false, prepare: :multiply
         argument :prepared_by_proc_arg, Int, required: false, prepare: ->(val, context) { context[:multiply_by] * val }
@@ -28,7 +47,7 @@ describe GraphQL::Schema::Argument do
           raise GraphQL::UnauthorizedError.new('no access')
         end
 
-        argument :keys, [String], required: false, method_access: false
+        argument :keys, [String], required: false
         argument :instrument_id, ID, required: false, loads: Jazz::InstrumentType
         argument :instrument_ids, [ID], required: false, loads: Jazz::InstrumentType
 
@@ -43,7 +62,7 @@ describe GraphQL::Schema::Argument do
         argument :prepared_by_callable_arg, Int, required: false, prepare: Multiply.new
       end
 
-      def field(**args)
+      def self.run_field(context, **args)
         # sort the fields so that they match the output of the new interpreter
         sorted_keys = args.keys.sort
         sorted_args = {}
@@ -51,9 +70,27 @@ describe GraphQL::Schema::Argument do
         sorted_args.inspect
       end
 
+      def field(**args)
+        self.class.run_field(context, **args)
+      end
+
       def multiply(val)
         context[:multiply_by] * val
       end
+
+      field :context_arg_test, [String], null: false, resolve_static: true do
+        argument :input, ContextInput
+      end
+
+      def self.context_arg_test(context, input:)
+        [input.context, input.context.class, context.class]
+      end
+
+      def context_arg_test(input:)
+        self.class.context_arg_test(context, input: input)
+      end
+
+      field :other_unauthorized_instruments, resolver: LoadUnauthorizedInstruments
     end
 
     class Schema < GraphQL::Schema
@@ -64,7 +101,9 @@ describe GraphQL::Schema::Argument do
         -> { Jazz::GloballyIdentifiableType.find(id) }
       end
 
-      orphan_types [Jazz::InstrumentType, UnauthorizedInstrumentType]
+      def self.resolve_type(type, obj, ctx)
+        -> { type } # just for `loads:`
+      end
     end
   end
 
@@ -117,6 +156,24 @@ describe GraphQL::Schema::Argument do
     end
   end
 
+  describe "#comment" do
+    let(:arg) { SchemaArgumentTest::Query.fields["field"].arguments["arg"] }
+
+    it "sets comment" do
+      arg.comment "new comment"
+      assert_equal "new comment", arg.comment
+    end
+
+    it "returns comment" do
+      assert_equal "test comment", SchemaArgumentTest::Query.fields["field"].arguments["argWithBlock"].comment
+    end
+
+    it "has an assignment method" do
+      arg.comment = "another new comment"
+      assert_equal "another new comment", arg.comment
+    end
+  end
+
   describe "as:" do
     it "uses that Symbol for Ruby kwargs" do
       query_str = <<-GRAPHQL
@@ -125,19 +182,20 @@ describe GraphQL::Schema::Argument do
 
       res = SchemaArgumentTest::Schema.execute(query_str)
       # Make sure it's getting the renamed symbol:
-      assert_equal '{:renamed=>"x", :required_with_default_arg=>1}', res["data"]["field"]
+      assert_equal({renamed: "x", required_with_default_arg: 1}.inspect, res["data"]["field"])
     end
   end
 
   describe "prepare:" do
     it "calls the method on the field's owner" do
+      exec_next_WONTFIX("Prepare methods aren't called with exec-next")
       query_str = <<-GRAPHQL
       { field(preparedArg: 5) }
       GRAPHQL
 
       res = SchemaArgumentTest::Schema.execute(query_str, context: {multiply_by: 3})
       # Make sure it's getting the renamed symbol:
-      assert_equal '{:prepared_arg=>15, :required_with_default_arg=>1}', res["data"]["field"]
+      assert_equal({ prepared_arg: 15, required_with_default_arg: 1}.inspect, res["data"]["field"])
     end
 
     it "calls the method on the provided Proc" do
@@ -147,7 +205,7 @@ describe GraphQL::Schema::Argument do
 
       res = SchemaArgumentTest::Schema.execute(query_str, context: {multiply_by: 3})
       # Make sure it's getting the renamed symbol:
-      assert_equal '{:prepared_by_proc_arg=>15, :required_with_default_arg=>1}', res["data"]["field"]
+      assert_equal({prepared_by_proc_arg: 15, required_with_default_arg: 1 }.inspect, res["data"]["field"])
     end
 
     it "calls the method on the provided callable object" do
@@ -157,7 +215,7 @@ describe GraphQL::Schema::Argument do
 
       res = SchemaArgumentTest::Schema.execute(query_str, context: {multiply_by: 3})
       # Make sure it's getting the renamed symbol:
-      assert_equal '{:prepared_by_callable_arg=>15, :required_with_default_arg=>1}', res["data"]["field"]
+      assert_equal({prepared_by_callable_arg: 15, required_with_default_arg: 1}.inspect, res["data"]["field"])
     end
 
     it "handles exceptions raised by prepare" do
@@ -166,7 +224,7 @@ describe GraphQL::Schema::Argument do
       GRAPHQL
 
       res = SchemaArgumentTest::Schema.execute(query_str, context: {multiply_by: 3})
-      assert_equal({ 'f1' => '{:arg=>"echo", :required_with_default_arg=>1}', 'f2' => nil }, res['data'])
+      assert_equal({ 'f1' => {arg: "echo", required_with_default_arg: 1}.inspect, 'f2' => nil }, res['data'])
       assert_equal(res['errors'][0]['message'], 'boom!')
       assert_equal(res['errors'][0]['path'], ['f2'])
     end
@@ -177,7 +235,7 @@ describe GraphQL::Schema::Argument do
       GRAPHQL
 
       res = SchemaArgumentTest::Schema.execute(query_str, context: {multiply_by: 3})
-      assert_equal({ 'f1' => '{:arg=>"echo", :required_with_default_arg=>1}', 'f2' => nil }, res['data'])
+      assert_equal({ 'f1' => {arg: "echo", required_with_default_arg: 1}.inspect, 'f2' => nil }, res['data'])
       assert_nil(res['errors'])
     end
   end
@@ -189,7 +247,7 @@ describe GraphQL::Schema::Argument do
       GRAPHQL
 
       res = SchemaArgumentTest::Schema.execute(query_str)
-      assert_equal '{:required_with_default_arg=>1}', res["data"]["field"]
+      assert_equal({required_with_default_arg: 1}.inspect, res["data"]["field"])
     end
 
     it 'uses provided input value' do
@@ -198,7 +256,7 @@ describe GraphQL::Schema::Argument do
       GRAPHQL
 
       res = SchemaArgumentTest::Schema.execute(query_str)
-      assert_equal '{:required_with_default_arg=>2}', res["data"]["field"]
+      assert_equal({ required_with_default_arg: 2 }.inspect, res["data"]["field"])
     end
 
     it 'respects non-null type' do
@@ -218,14 +276,14 @@ describe GraphQL::Schema::Argument do
       GRAPHQL
 
       res = SchemaArgumentTest::Schema.execute(query_str)
-      assert_equal "{:instrument=>#{Jazz::Models::Instrument.new("Drum Kit", "PERCUSSION").inspect}, :required_with_default_arg=>1}", res["data"]["field"]
+      assert_equal({instrument: Jazz::Models::Instrument.new("Drum Kit", "PERCUSSION"), required_with_default_arg: 1}.inspect, res["data"]["field"])
 
       query_str2 = <<-GRAPHQL
       query { field(instrumentIds: ["Instrument/Organ"]) }
       GRAPHQL
 
       res = SchemaArgumentTest::Schema.execute(query_str2)
-      assert_equal "{:instruments=>[#{Jazz::Models::Instrument.new("Organ", "KEYS").inspect}], :required_with_default_arg=>1}", res["data"]["field"]
+      assert_equal({instruments: [Jazz::Models::Instrument.new("Organ", "KEYS")], required_with_default_arg: 1}.inspect, res["data"]["field"])
     end
 
     it "returns nil when no ID is given and `required: false`" do
@@ -240,7 +298,7 @@ describe GraphQL::Schema::Argument do
       GRAPHQL
 
       res = Jazz::Schema.execute(query_str, variables: { ensembleId: "Ensemble/Robert Glasper Experiment" })
-      assert_equal "ROBERT GLASPER Experiment", res["data"]["loadAndReturnEnsemble"]["ensemble"]["name"]
+      assert_equal "#{if_exec_next("Robert Glasper", "ROBERT GLASPER")} Experiment", res["data"]["loadAndReturnEnsemble"]["ensemble"]["name"]
 
       res2 = Jazz::Schema.execute(query_str, variables: { ensembleId: nil })
       assert_nil res2["data"]["loadAndReturnEnsemble"].fetch("ensemble")
@@ -293,6 +351,17 @@ describe GraphQL::Schema::Argument do
       assert_nil res["errors"]
       assert_nil res["data"].fetch("field")
     end
+
+    it "handles applies authorization even when a custom load method is provided" do
+      exec_next_WONTFIX "Custom load methods aren't called"
+      query_str = <<-GRAPHQL
+      query { otherUnauthorizedInstruments(ids: ["Instrument/Drum Kit"]) }
+      GRAPHQL
+
+      res = SchemaArgumentTest::Schema.execute(query_str)
+      assert_nil res["errors"]
+      assert_nil res["data"].fetch("otherUnauthorizedInstruments")
+    end
   end
 
   describe "deprecation_reason:" do
@@ -311,13 +380,20 @@ describe GraphQL::Schema::Argument do
     it "has an assignment method" do
       arg.deprecation_reason = "another new deprecation reason"
       assert_equal "another new deprecation reason", arg.deprecation_reason
+      assert_equal 1, arg.directives.size
+      arg.deprecation_reason = "something else"
+      assert_equal "something else", arg.deprecation_reason
+      assert_equal 1, arg.directives.size
+      arg.deprecation_reason = nil
+      assert_nil arg.deprecation_reason
+      assert_equal 0, arg.directives.size
     end
 
     it "disallows deprecating required arguments in the constructor" do
       err = assert_raises ArgumentError do
         Class.new(GraphQL::Schema::InputObject) do
           graphql_name 'MyInput'
-          argument :foo, String, required: true, deprecation_reason: "Don't use me"
+          argument :foo, String, deprecation_reason: "Don't use me"
         end
       end
       assert_equal "Required arguments cannot be deprecated: MyInput.foo.", err.message
@@ -343,7 +419,7 @@ describe GraphQL::Schema::Argument do
 
       query_type = Class.new(GraphQL::Schema::Object) do
         graphql_name "Query"
-        field :f, String, null: true do
+        field :f, String do
           argument :arg, input_obj, required: false
         end
       end
@@ -351,7 +427,7 @@ describe GraphQL::Schema::Argument do
       err = assert_raises ArgumentError do
         Class.new(GraphQL::Schema) do
           query(query_type)
-        end
+        end.to_definition
       end
 
       assert_equal "Required arguments cannot be deprecated: MyInput2.foo.", err.message
@@ -380,7 +456,7 @@ describe GraphQL::Schema::Argument do
       err = assert_raises ArgumentError do
         Class.new(InvalidArgumentTypeSchema) do
           query(InvalidArgumentTypeSchema::InvalidArgumentObject)
-        end
+        end.to_definition
       end
 
       expected_message = "Invalid input type for InvalidArgumentObject.invalid.objectRef: InvalidArgument. Must be scalar, enum, or input object, not OBJECT."
@@ -389,7 +465,7 @@ describe GraphQL::Schema::Argument do
       err = assert_raises ArgumentError do
         Class.new(InvalidArgumentTypeSchema) do
           query(InvalidArgumentTypeSchema::InvalidLazyArgumentObject)
-        end
+        end.to_definition
       end
 
       expected_message = "Invalid input type for InvalidLazyArgumentObject.invalid.lazyObjectRef: InvalidArgument. Must be scalar, enum, or input object, not OBJECT."
@@ -402,14 +478,14 @@ describe GraphQL::Schema::Argument do
       query_type = Class.new(GraphQL::Schema::Object) do
         graphql_name "Query"
         field :f1, Integer, null: false do
-          argument :arg1, Integer, default_value: nil, required: true
+          argument :arg1, Integer, default_value: nil
         end
       end
 
       err = assert_raises GraphQL::Schema::Argument::InvalidDefaultValueError do
         Class.new(GraphQL::Schema) do
           query(query_type)
-        end
+        end.to_definition
       end
       expected_message = "`Query.f1.arg1` has an invalid default value: `nil` isn't accepted by `Int!`; update the default value or the argument type."
       assert_equal expected_message, err.message
@@ -424,14 +500,14 @@ describe GraphQL::Schema::Argument do
       query_type = Class.new(GraphQL::Schema::Object) do
         graphql_name "Query"
         field :f1, Integer, null: false do
-          argument :input, input_obj, required: true
+          argument :input, input_obj
         end
       end
 
       err = assert_raises GraphQL::Schema::Argument::InvalidDefaultValueError do
         Class.new(GraphQL::Schema) do
           query(query_type)
-        end
+        end.to_definition
       end
 
       expected_message = "`InputObj.arg1` has an invalid default value: `[nil]` isn't accepted by `[String!]`; update the default value or the argument type."
@@ -454,7 +530,7 @@ describe GraphQL::Schema::Argument do
       err = assert_raises GraphQL::Schema::Argument::InvalidDefaultValueError do
         Class.new(GraphQL::Schema) do
           directive(localize)
-        end
+        end.to_definition
       end
 
       expected_message = "`@localize.lang` has an invalid default value: `\"ZH\"` isn't accepted by `Language`; update the default value or the argument type."
@@ -488,7 +564,7 @@ describe GraphQL::Schema::Argument do
 
 
       err2 = assert_raises GraphQL::Schema::Argument::InvalidDefaultValueError do
-        GraphQL::Schema.from_definition(directive_schema_str)
+        GraphQL::Schema.from_definition(directive_schema_str).to_definition
       end
       expected_message = "`@localize.lang` has an invalid default value: `\"ZH\"` isn't accepted by `Language`; update the default value or the argument type."
       assert_equal expected_message, err2.message
@@ -509,6 +585,329 @@ describe GraphQL::Schema::Argument do
       end
       expected_message = "`InputObj.arg1` has an invalid default value: `[nil]` isn't accepted by `[String!]`; update the default value or the argument type."
       assert_equal expected_message, err3.message
+    end
+  end
+
+  it "works with arguments named context" do
+    res = SchemaArgumentTest::Schema.execute("{ contextArgTest(input: { context: \"abc\" }) }")
+    assert_equal ["abc", "String", "GraphQL::Query::Context"], res["data"]["contextArgTest"]
+  end
+
+  describe "required: :nullable" do
+    class RequiredNullableSchema < GraphQL::Schema
+      class Query < GraphQL::Schema::Object
+        field :echo, String, resolve_static: true do
+          argument :str, String, required: :nullable
+        end
+
+        def self.echo(context, str:)
+          str
+        end
+
+        def echo(str:)
+          str
+        end
+      end
+
+      query(Query)
+    end
+
+    it "requires a value, even if it's null" do
+      res = RequiredNullableSchema.execute('{ echo(str: "ok") }')
+      assert_equal "ok", res["data"]["echo"]
+      res = RequiredNullableSchema.execute('{ echo(str: null) }')
+      assert_nil res["data"].fetch("echo")
+      res = RequiredNullableSchema.execute('{ echo }')
+      assert_equal ["echo must include the following argument: str."], res["errors"].map { |e| e["message"] }
+    end
+
+    describe "combined with `as:`" do
+      class RequiredNullableAsSchema < GraphQL::Schema
+        class Query < GraphQL::Schema::Object
+          field :echo, String, resolve_static: true do
+            argument :str, String, required: :nullable, as: :renamed_str
+          end
+
+          def self.echo(context, renamed_str:)
+            renamed_str.inspect
+          end
+
+          def echo(renamed_str:)
+            renamed_str.inspect
+          end
+        end
+
+        query(Query)
+      end
+
+      it "validates against the aliased keyword" do
+        res = RequiredNullableAsSchema.execute('{ echo(str: "ok") }')
+        assert_equal "\"ok\"", res["data"]["echo"]
+        res = RequiredNullableAsSchema.execute('{ echo(str: null) }')
+        assert_equal "nil", res["data"]["echo"]
+        res = RequiredNullableAsSchema.execute('{ echo }')
+        assert_equal ["echo must include the following argument: str."], res["errors"].map { |e| e["message"] }
+      end
+    end
+  end
+
+  describe "replace_null_with_default: true" do
+    class ReplaceNullWithDefaultSchema < GraphQL::Schema
+      class Add < GraphQL::Schema::Resolver
+        argument :left, Integer, required: false, default_value: 5, replace_null_with_default: true
+        argument :right, Integer
+        type Integer, null: false
+
+        def resolve(left:, right:)
+          right + left
+        end
+      end
+
+      class AddInput < GraphQL::Schema::InputObject
+        argument :left, Integer, required: false, default_value: 5, replace_null_with_default: true
+        argument :right, Integer
+      end
+
+      class Query < GraphQL::Schema::Object
+        field :add1, Integer, resolve_static: true do
+          argument :left, Integer, required: false, default_value: 5, replace_null_with_default: true
+          argument :right, Integer
+        end
+
+        def self.add1(context, left:, right:)
+          left + right
+        end
+
+        def add1(left:, right:)
+          self.class.add1(context, left: left, right: right)
+        end
+
+        field :add2, resolver: Add
+
+        field :add3, Integer, resolve_static: true do
+          argument :input, AddInput
+        end
+
+        def self.add3(context, input:)
+          input[:left] + input[:right]
+        end
+
+        def add3(input:)
+          self.class.add3(context, input: input)
+        end
+      end
+      query(Query)
+    end
+
+    it "works for fields, resolvers, and input objects" do
+      res1 = ReplaceNullWithDefaultSchema.execute("{ r1: add1(left: null, right: 2) r2: add1(right: 0)}")
+      assert_equal 7, res1["data"]["r1"]
+      assert_equal 5, res1["data"]["r2"]
+
+      res2 = ReplaceNullWithDefaultSchema.execute("{ r1: add2(left: null, right: 1) r2: add2(right: 3) }")
+      assert_equal 6, res2["data"]["r1"]
+      assert_equal 8, res2["data"]["r2"]
+
+      res3 = ReplaceNullWithDefaultSchema.execute("{ r1: add3(input: { left: null, right: 5 }) r2: add3(input: { right: 6 }) }")
+      assert_equal 10, res3["data"]["r1"]
+      assert_equal 11, res3["data"]["r2"]
+    end
+  end
+
+  it "can get default_value and prepare from method calls in the config block" do
+    type = Class.new(GraphQL::Schema::Object) do
+      field :f, String do
+        argument :arg, String do
+          default_value "blah"
+          prepare -> { :stuff }
+        end
+      end
+    end
+
+    arg = type.get_field("f").get_argument("arg")
+    assert_equal "blah", arg.default_value
+    assert_equal :stuff, arg.prepare.call
+  end
+
+  describe "multiple argument definitions with default values" do
+    class MultipleArgumentDefaultValuesSchema < GraphQL::Schema
+      use GraphQL::Schema::Warden if ADD_WARDEN
+      class BaseArgument < GraphQL::Schema::Argument
+        def initialize(*args, use_if:, **kwargs, &block)
+          @use_if = use_if
+          super(*args, **kwargs, &block)
+        end
+
+        def visible?(ctx)
+          ctx[:use_if] == @use_if
+        end
+      end
+
+      class BaseField < GraphQL::Schema::Field
+        argument_class BaseArgument
+      end
+
+      class Query < GraphQL::Schema::Object
+        field_class BaseField
+
+        field :echo, String, resolve_static: true do
+          argument :input, String, required: false, default_value: "argument-default-1", use_if: :visible_1
+          argument :input, String, required: false, default_value: "argument-default-2", use_if: :visible_2
+          argument :input, String, required: false, default_value: nil, use_if: :visible_3
+        end
+
+        def self.echo(context, input: "method-default")
+          input || "dynamic-fallback"
+        end
+
+        def echo(input: "method-default")
+          self.class.echo(context, input: input)
+        end
+      end
+
+      query(Query)
+    end
+
+    def get_echo_for(use_if)
+      res = MultipleArgumentDefaultValuesSchema.execute("{ echo }", context: { use_if: use_if })
+      res["data"]["echo"]
+    end
+
+    it "uses the default value from the matching argument if there is one" do
+      assert_equal "argument-default-1", get_echo_for(:visible_1)
+      assert_equal "argument-default-2", get_echo_for(:visible_2)
+      assert_equal "dynamic-fallback", get_echo_for(:visible_3)
+      assert_equal "method-default", get_echo_for(:visible_4) # no match
+    end
+  end
+
+  describe "multiple argument validations with rescue_from" do
+    let(:schema) do
+      Class.new(GraphQL::Schema) do
+        rescue_from(StandardError) do |exception, _obj, _args, _context, _field|
+          raise exception
+        end
+
+        query_type = Class.new(GraphQL::Schema::Object) do
+          graphql_name 'TestQueryType'
+
+          field :test, Integer, null: false do
+            argument :a, Integer, validates: { numericality: { greater_than_or_equal_to: 1 } }
+            argument :b, Integer, validates: { numericality: { greater_than_or_equal_to: 1 } }
+          end
+
+          def test; end
+        end
+
+        query(query_type)
+        lazy_resolve(Proc, :call)
+      end
+    end
+
+    it 'validates both arguments' do
+      expected_errors = [
+        {
+          "message"=>"a must be greater than or equal to 1",
+          "locations"=>[{ "line"=>1, "column"=>3 }],
+          "path"=>["test"]
+        },
+        {
+          "message"=>"b must be greater than or equal to 1",
+          "locations"=>[{"line"=>1, "column"=>3}],
+          "path"=>["test"]
+        }
+      ]
+      query = "{ test(a: -4, b: -5) }"
+
+      assert_equal expected_errors, schema.execute(query).to_h['errors']
+    end
+  end
+
+  describe "argument validation with a rescue_from handler that returns an error" do
+    let(:schema) do
+      test_resolver = Class.new(GraphQL::Schema::Resolver) do
+        type Integer, null: true
+        argument :a, Integer, validates: { numericality: { greater_than_or_equal_to: 1 } }
+
+        def resolve(a:)
+          a + 1
+        end
+      end
+
+      Class.new(GraphQL::Schema) do
+        rescue_from(StandardError) do |exception, _obj, _args, _context, _field|
+          GraphQL::ExecutionError.new(exception.message)
+        end
+
+        query_type = Class.new(GraphQL::Schema::Object) do
+          graphql_name 'TestQueryType'
+          field :test, resolver: test_resolver
+        end
+
+        query(query_type)
+      end
+    end
+
+    it 'returns the error instead of passing it to the resolver as the argument value' do
+      expected_errors = [
+        {
+          "message" => "a must be greater than or equal to 1",
+          "locations" => [{ "line" => 1, "column" => 3 }],
+          "path" => ["test"]
+        }
+      ]
+      result = schema.execute("{ test(a: -4) }")
+
+      assert_equal expected_errors, result.to_h['errors']
+      assert_nil result['data']['test']
+    end
+  end
+
+  describe "default values for non-null input object arguments when not present in variables" do
+    class InputObjectArgumentWithDefaultValueSchema < GraphQL::Schema
+      class Add < GraphQL::Schema::Resolver
+        class AddInput < GraphQL::Schema::InputObject
+          argument :a, Integer
+          argument :b, Integer
+          argument :c, Integer, default_value: 10
+        end
+
+        argument :input, AddInput
+        type(Integer, null: false)
+
+        def resolve(input:)
+          input[:a] + input[:b] + input[:c]
+        end
+      end
+      class Query < GraphQL::Schema::Object
+        field :add, resolver: Add
+      end
+      query(Query)
+    end
+
+    it "uses the default value" do
+      res1 = InputObjectArgumentWithDefaultValueSchema.execute("{ add(input: { a: 1, b: 2 })}")
+      assert_equal 13, res1["data"]["add"]
+
+      res2 = InputObjectArgumentWithDefaultValueSchema.execute("query Add($input: AddInput!) { add(input: $input) }", variables: { input: { a: 1, b: 4 } })
+      assert_equal 15, res2["data"]["add"]
+    end
+  end
+
+  describe "argument definitions" do
+    it "HasArguments::argument documents each argument" do
+      has_arguments_argument_comment = File.read("./lib/graphql/schema/member/has_arguments.rb")[/(\s+#[^\n]*\n)+\s+def argument\(/m]
+      has_arguments_argument_doc_param_names = rdoc_parameter_names(has_arguments_argument_comment, include_options: true)
+      argument_initialize_argument_names = GraphQL::Schema::Argument.instance_method(:initialize).parameters.map { |param| param[1].to_s }
+      assert_equal ["kwargs"], has_arguments_argument_doc_param_names - argument_initialize_argument_names
+      assert_equal ["owner"], argument_initialize_argument_names - has_arguments_argument_doc_param_names
+    end
+
+    it "Argument::initialize documents each argument" do
+      argument_initialize_comment = File.read("./lib/graphql/schema/argument.rb")[/(\s+#[^\n]*\n)+ {6}def initialize\(/m]
+      argument_initialize_doc_param_names = rdoc_parameter_names(argument_initialize_comment)
+      argument_initialize_argument_names = GraphQL::Schema::Argument.instance_method(:initialize).parameters.map { |param| param[1].to_s }
+      assert_equal argument_initialize_doc_param_names.sort, argument_initialize_argument_names.sort
     end
   end
 end

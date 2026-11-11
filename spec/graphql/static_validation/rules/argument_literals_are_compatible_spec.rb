@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 require "spec_helper"
-
+require "uri"
 describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
   include StaticValidationHelpers
-  include ErrorBubblingHelpers
 
   let(:query_string) {%|
     query getCheese {
@@ -21,99 +20,42 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
     }
   |}
 
-  describe "with error bubbling disabled" do
-    it "finds undefined or missing-required arguments to fields and directives" do
-      without_error_bubbling(schema) do
-        # `wacky` above is handled by ArgumentsAreDefined, missingSource is handled by RequiredInputObjectAttributesArePresent
-        # so only 4 are tested below
-        assert_equal(6, errors.length)
+  it "finds undefined or missing-required arguments to fields and directives" do
+    # `wacky` above is handled by ArgumentsAreDefined, missingSource is handled by RequiredInputObjectAttributesArePresent
+    # so only 4 are tested below
+    assert_equal(6, errors.length)
 
-        query_root_error = {
-          "message"=>"Argument 'id' on Field 'stringCheese' has an invalid value (\"aasdlkfj\"). Expected type 'Int!'.",
-          "locations"=>[{"line"=>3, "column"=>7}],
-          "path"=>["query getCheese", "stringCheese", "id"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"id"},
-        }
-        assert_includes(errors, query_root_error)
+    query_root_error = {
+      "message"=>"Argument 'id' on Field 'stringCheese' has an invalid value (\"aasdlkfj\"). Expected type 'Int!'.",
+      "locations"=>[{"line"=>3, "column"=>7}],
+      "path"=>["query getCheese", "stringCheese", "id"],
+      "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"id"},
+    }
+    assert_includes(errors, query_root_error)
 
-        directive_error = {
-          "message"=>"Argument 'if' on Directive 'skip' has an invalid value (\"whatever\"). Expected type 'Boolean!'.",
-          "locations"=>[{"line"=>4, "column"=>30}],
-          "path"=>["query getCheese", "cheese", "source", "if"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Directive", "argumentName"=>"if"},
-        }
-        assert_includes(errors, directive_error)
+    directive_error = {
+      "message"=>"Argument 'if' on Directive 'skip' has an invalid value (\"whatever\"). Expected type 'Boolean!'.",
+      "locations"=>[{"line"=>4, "column"=>30}],
+      "path"=>["query getCheese", "cheese", "source", "if"],
+      "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Directive", "argumentName"=>"if"},
+    }
+    assert_includes(errors, directive_error)
 
-        input_object_field_error = {
-          "message"=>"Argument 'source' on InputObject 'DairyProductInput' has an invalid value (1.1). Expected type 'DairyAnimal!'.",
-          "locations"=>[{"line"=>6, "column"=>39}],
-          "path"=>["query getCheese", "badSource", "product", 0, "source"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"InputObject", "argumentName"=>"source"},
-        }
-        assert_includes(errors, input_object_field_error)
+    input_object_field_error = {
+      "message"=>"Argument 'source' on InputObject 'DairyProductInput' has an invalid value (1.1). Expected type 'DairyAnimal!'.",
+      "locations"=>[{"line"=>6, "column"=>39}],
+      "path"=>["query getCheese", "badSource", "product", 0, "source"],
+      "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"InputObject", "argumentName"=>"source"},
+    }
+    assert_includes(errors, input_object_field_error)
 
-        fragment_error = {
-          "message"=>"Argument 'source' on Field 'similarCheese' has an invalid value (4.5). Expected type '[DairyAnimal!]!'.",
-          "locations"=>[{"line"=>13, "column"=>7}],
-          "path"=>["fragment cheeseFields", "similarCheese", "source"],
-          "extensions"=> {"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"source"}
-        }
-        assert_includes(errors, fragment_error)
-      end
-    end
-    it 'works with error bubbling enabled' do
-      with_error_bubbling(schema) do
-        assert_equal(9, errors.length)
-
-        query_root_error = {
-          "message"=>"Argument 'id' on Field 'stringCheese' has an invalid value (\"aasdlkfj\"). Expected type 'Int!'.",
-          "locations"=>[{"line"=>3, "column"=>7}],
-          "path"=>["query getCheese", "stringCheese", "id"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"id"},
-        }
-        assert_includes(errors, query_root_error)
-
-        directive_error = {
-          "message"=>"Argument 'if' on Directive 'skip' has an invalid value (\"whatever\"). Expected type 'Boolean!'.",
-          "locations"=>[{"line"=>4, "column"=>30}],
-          "path"=>["query getCheese", "cheese", "source", "if"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Directive", "argumentName"=>"if"},
-        }
-        assert_includes(errors, directive_error)
-
-        input_object_error = {
-          "message"=>"Argument 'product' on Field 'badSource' has an invalid value ({source: 1.1}). Expected type '[DairyProductInput]'.",
-          "locations"=>[{"line"=>6, "column"=>7}],
-          "path"=>["query getCheese", "badSource", "product"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"product"},
-        }
-        assert_includes(errors, input_object_error)
-
-        input_object_field_error = {
-          "message"=>"Argument 'source' on InputObject 'DairyProductInput' has an invalid value (1.1). Expected type 'DairyAnimal!'.",
-          "locations"=>[{"line"=>6, "column"=>39}],
-          "path"=>["query getCheese", "badSource", "product", 0, "source"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"InputObject", "argumentName"=>"source"},
-        }
-        assert_includes(errors, input_object_field_error)
-
-        missing_required_field_error = {
-          "message"=>"Argument 'product' on Field 'missingSource' has an invalid value ([{fatContent: 1.1}]). Expected type '[DairyProductInput]'.",
-          "locations"=>[{"line"=>7, "column"=>7}],
-          "path"=>["query getCheese", "missingSource", "product"],
-          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"product"}
-        }
-        assert_includes(errors, missing_required_field_error)
-
-        fragment_error = {
-          "message"=>"Argument 'source' on Field 'similarCheese' has an invalid value (4.5). Expected type '[DairyAnimal!]!'.",
-          "locations"=>[{"line"=>13, "column"=>7}],
-          "path"=>["fragment cheeseFields", "similarCheese", "source"],
-          "extensions"=> {"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"source"}
-        }
-        assert_includes(errors, fragment_error)
-      end
-    end
+    fragment_error = {
+      "message"=>"Argument 'source' on Field 'similarCheese' has an invalid value (4.5). Expected type '[DairyAnimal!]!'.",
+      "locations"=>[{"line"=>13, "column"=>7}],
+      "path"=>["fragment cheeseFields", "similarCheese", "source"],
+      "extensions"=> {"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"source"}
+    }
+    assert_includes(errors, fragment_error)
   end
 
   describe "using input objects for enums it adds an error" do
@@ -123,16 +65,24 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
       }
     GRAPHQL
     }
-    it "works with error bubbling disabled" do
-      without_error_bubbling(schema) do
-        assert_equal 1, errors.length
-      end
+    it "works" do
+      assert_equal 1, errors.length
     end
+  end
 
-    it "works with error bubbling enabled" do
-      with_error_bubbling(schema) do
-        assert_equal 2, errors.length
-      end
+  describe "with equal invalid literals in a list" do
+    let(:query_string) { <<-GRAPHQL
+      {
+        dupes: searchDairy(product: [{source: 1.1}, {source: 1.1}]) { __typename }
+      }
+    GRAPHQL
+    }
+
+    it "reports an error for each one" do
+      assert_equal([
+        ["query", "dupes", "product", 0, "source"],
+        ["query", "dupes", "product", 1, "source"],
+      ], errors.map { |err| err["path"] })
     end
   end
 
@@ -155,18 +105,9 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
       }
     end
 
-    it "works with error bubbling disabled" do
-      without_error_bubbling(schema) do
-        assert_includes(errors, enum_invalid_for_id_error)
-        assert_equal 1, errors.length
-      end
-    end
-
-    it "works with error bubbling enabled" do
-      with_error_bubbling(schema) do
-        assert_includes(errors, enum_invalid_for_id_error)
-        assert_equal 1, errors.length
-      end
+    it "works" do
+      assert_includes(errors, enum_invalid_for_id_error)
+      assert_equal 1, errors.length
     end
   end
 
@@ -276,42 +217,20 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
         }
       |}
 
-      describe "it finds errors" do
-        it "works with error bubbling disabled" do
-          without_error_bubbling(schema) do
-            assert_equal 1, errors.length
-            refute_includes errors, {
-              "message"=>"Argument 'arg' on Field 'field' has an invalid value ({a: null, b: null}). Expected type 'Input'.",
-              "locations"=>[{"line"=>3, "column"=>11}],
-              "path"=>["query", "field", "arg"],
-              "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"arg"}
-            }
-            assert_includes errors, {
-              "message"=>"Argument 'b' on InputObject 'Input' has an invalid value (null). Expected type 'Int!'.",
-              "locations"=>[{"line"=>3, "column"=>22}],
-              "path"=>["query", "field", "arg", "b"],
-              "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"InputObject", "argumentName"=>"b"}
-            }
-          end
-        end
-        it "works with error bubbling enabled" do
-          with_error_bubbling(schema) do
-            assert_equal 2, errors.length
-            assert_includes errors, {
-              "message"=>"Argument 'arg' on Field 'field' has an invalid value ({a: null, b: null}). Expected type 'Input'.",
-              "locations"=>[{"line"=>3, "column"=>11}],
-              "path"=>["query", "field", "arg"],
-              "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"arg"}
-            }
-
-            assert_includes errors, {
-              "message"=>"Argument 'b' on InputObject 'Input' has an invalid value (null). Expected type 'Int!'.",
-              "locations"=>[{"line"=>3, "column"=>22}],
-              "path"=>["query", "field", "arg", "b"],
-              "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"InputObject", "argumentName"=>"b"}
-            }
-          end
-        end
+      it "it finds errors" do
+        assert_equal 1, errors.length
+        refute_includes errors, {
+          "message"=>"Argument 'arg' on Field 'field' has an invalid value ({a: null, b: null}). Expected type 'Input'.",
+          "locations"=>[{"line"=>3, "column"=>11}],
+          "path"=>["query", "field", "arg"],
+          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"Field", "argumentName"=>"arg"}
+        }
+        assert_includes errors, {
+          "message"=>"Argument 'b' on InputObject 'Input' has an invalid value (null). Expected type 'Int!'.",
+          "locations"=>[{"line"=>3, "column"=>22}],
+          "path"=>["query", "field", "arg", "b"],
+          "extensions"=>{"code"=>"argumentLiteralsIncompatible", "typeName"=>"InputObject", "argumentName"=>"b"}
+        }
       end
     end
   end
@@ -378,8 +297,8 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
     end
 
     class RangeType < GraphQL::Schema::InputObject
-      argument :from, TimeType, required: true
-      argument :to, TimeType, required: true
+      argument :from, TimeType
+      argument :to, TimeType
     end
 
     class EmailType < GraphQL::Schema::Scalar
@@ -397,11 +316,10 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
       end
     end
 
-
     class Query < GraphQL::Schema::Object
       description "The query root of this schema"
 
-      field :time, TimeType, null: true do
+      field :time, TimeType do
         argument :value, TimeType, required: false
         argument :range, RangeType, required: false
       end
@@ -410,7 +328,7 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
         value
       end
 
-      field :email, EmailType, null: true do
+      field :email, EmailType do
         argument :value, EmailType, required: false
       end
 
@@ -473,22 +391,11 @@ describe GraphQL::StaticValidation::ArgumentLiteralsAreCompatible do
       }
 
       describe "sets deep error message from a CoercionError if raised" do
-        it "works with error bubbling enabled" do
-          with_error_bubbling(schema) do
-            assert_equal 3, errors.length
-            assert_includes(errors, from_error)
-            assert_includes(errors, to_error)
-            assert_includes(errors, bubbling_error)
-          end
-        end
-
-        it "works without error bubbling enabled" do
-          without_error_bubbling(schema) do
-            assert_equal 2, errors.length
-            assert_includes(errors, from_error)
-            assert_includes(errors, to_error)
-            refute_includes(errors, bubbling_error)
-          end
+        it "works" do
+          assert_equal 2, errors.length
+          assert_includes(errors, from_error)
+          assert_includes(errors, to_error)
+          refute_includes(errors, bubbling_error)
         end
       end
     end

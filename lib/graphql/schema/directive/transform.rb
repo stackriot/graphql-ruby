@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   class Schema
     class Directive < GraphQL::Schema::Member
@@ -8,15 +10,23 @@ module GraphQL
       # and if the named transform is whitelisted and applies to the return value,
       # it's applied by calling a method with that name.
       #
-      # @example Installing the directive
-      #   class MySchema < GraphQL::Schema
-      #     directive(GraphQL::Schema::Directive::Transform)
-      #   end
+      # **Examples**
       #
-      # @example Transforming strings
-      #   viewer {
-      #     username @transform(by: "upcase")
-      #   }
+      # **Example: Installing the directive**
+      #
+      # ```ruby
+      # class MySchema < GraphQL::Schema
+      #   directive(GraphQL::Schema::Directive::Transform)
+      # end
+      # ```
+      #
+      # **Example: Transforming strings**
+      #
+      # ```ruby
+      # viewer {
+      #   username @transform(by: "upcase")
+      # }
+      # ```
       class Transform < Schema::Directive
         description "Directs the executor to run named transform on the return value."
 
@@ -24,7 +34,7 @@ module GraphQL
           GraphQL::Schema::Directive::FIELD,
         )
 
-        argument :by, String, required: true,
+        argument :by, String,
           description: "The name of the transform to run if applicable"
 
         TRANSFORMS = [
@@ -39,7 +49,7 @@ module GraphQL
           transform_name = arguments[:by]
           if TRANSFORMS.include?(transform_name) && return_value.respond_to?(transform_name)
             return_value = return_value.public_send(transform_name)
-            response = context.namespace(:interpreter)[:runtime].final_result
+            response = context.namespace(:interpreter_runtime)[:runtime].final_result
             *keys, last = path
             keys.each do |key|
               if response && (response = response[key])
@@ -52,6 +62,26 @@ module GraphQL
               response[last] = return_value
             end
             nil
+          end
+        end
+
+        def self.resolve_field(ast_nodes, parent_type, field_defn, objects, arguments, context)
+          transform_name = arguments[:by]
+          if TRANSFORMS.include?(transform_name)
+            Transformer.new(transform_name)
+          else
+            nil
+          end
+        end
+
+        class Transformer
+          include Execution::PostProcessor
+          def initialize(transform)
+            @transform = transform
+          end
+          def after_resolve(field_results)
+            field_results.map! { |r| r.respond_to?(@transform) ? r.public_send(@transform) : r }
+            field_results
           end
         end
       end

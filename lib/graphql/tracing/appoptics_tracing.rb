@@ -1,4 +1,8 @@
 # frozen_string_literal: true
+#--
+# typed: ignore
+
+require "graphql/tracing/platform_tracing"
 
 module GraphQL
   module Tracing
@@ -8,7 +12,7 @@ module GraphQL
     #
     # There are 4 configurations available. They can be set in the
     # appoptics_apm config file or in code. Please see:
-    # {https://docs.appoptics.com/kb/apm_tracing/ruby/configure}
+    # https://docs.appoptics.com/kb/apm_tracing/ruby/configure
     #
     #     AppOpticsAPM::Config[:graphql][:enabled] = true|false
     #     AppOpticsAPM::Config[:graphql][:transaction_name]  = true|false
@@ -19,6 +23,11 @@ module GraphQL
       PREP_KEYS = ['lex', 'parse', 'validate', 'analyze_query', 'analyze_multiplex'].freeze
       # These GraphQL events will show up as 'graphql.execute' spans
       EXEC_KEYS = ['execute_multiplex', 'execute_query', 'execute_query_lazy'].freeze
+
+      def initialize(...)
+        warn "GraphQL::Tracing::AppOptics tracing is deprecated; update to SolarWindsAPM instead, which uses OpenTelemetry."
+        super
+      end
 
       # During auto-instrumentation this version of AppOpticsTracing is compared
       # with the version provided in the appoptics_apm gem, so that the newer
@@ -117,7 +126,7 @@ module GraphQL
           else
             [key, data[key]]
           end
-        end.flatten(2).each_slice(2).to_h.merge(Spec: 'graphql')
+        end.tap { _1.flatten!(2) }.each_slice(2).to_h.merge(Spec: 'graphql')
       end
       # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
@@ -148,7 +157,7 @@ module GraphQL
       end
 
       def graphql_multiplex(data)
-        names = data.queries.map(&:operations).map(&:keys).flatten.compact
+        names = data.queries.map(&:operations).map!(&:keys).tap(&:flatten!).tap(&:compact!)
         multiplex_transaction_name(names) if names.size > 1
 
         [:Operations, names.join(', ')]

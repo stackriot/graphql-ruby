@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 
 require 'time'
 
@@ -17,23 +19,45 @@ module GraphQL
     # own DateTime type.
     class ISO8601DateTime < GraphQL::Schema::Scalar
       description "An ISO 8601-encoded datetime"
+      specified_by_url "https://tools.ietf.org/html/rfc3339"
 
       # It's not compatible with Rails' default,
       # i.e. ActiveSupport::JSON::Encoder.time_precision (3 by default)
       DEFAULT_TIME_PRECISION = 0
 
-      # @return [Integer]
+      # **Returns**
+      #
+      # - `Integer`
+      #
+      # :call-seq:
+      #   time_precision() -> Integer
+      #: -> Integer
       def self.time_precision
         @time_precision || DEFAULT_TIME_PRECISION
       end
 
-      # @param [Integer] value
+      # **Parameters**
+      #
+      # - `value` (`Integer`)
+      #
+      # :call-seq:
+      #   time_precision=(Integer value)
+      #: (Integer value) -> void
       def self.time_precision=(value)
-        @time_precision = value
+        @time_precision = value #: Integer?
       end
 
-      # @param value [Time,Date,DateTime,String]
-      # @return [String]
+      # **Parameters**
+      #
+      # - `value` (`Time, Date, DateTime, String`)
+      #
+      # **Returns**
+      #
+      # - `String`
+      #
+      # :call-seq:
+      #   coerce_result(Time | Date | DateTime | String value, _ctx) -> String
+      #: (untyped value, GraphQL::Query::Context _ctx) -> ::String
       def self.coerce_result(value, _ctx)
         case value
         when Date
@@ -48,13 +72,32 @@ module GraphQL
         raise GraphQL::Error, "An incompatible object (#{value.class}) was given to #{self}. Make sure that only Times, Dates, DateTimes, and well-formatted Strings are used with this type. (#{error.message})"
       end
 
-      # @param str_value [String]
-      # @return [Time]
+      # **Parameters**
+      #
+      # - `str_value` (`String`)
+      #
+      # **Returns**
+      #
+      # - `Time`
+      #
+      # :call-seq:
+      #   coerce_input(String str_value, _ctx) -> Time
+      #: (untyped str_value, GraphQL::Query::Context _ctx) -> ::Time?
       def self.coerce_input(str_value, _ctx)
         Time.iso8601(str_value)
       rescue ArgumentError, TypeError
         begin
-          Date.iso8601(str_value).to_time
+          dt = Date.iso8601(str_value).to_time
+          # For compatibility, continue accepting dates given without times
+          # But without this, it would zero out given any time part of `str_value` (hours and/or minutes)
+          if dt.iso8601.start_with?(str_value)
+            dt
+          elsif str_value.length == 8 && str_value.match?(/\A\d{8}\Z/)
+            # Allow dates that are missing the "-". eg. "20220404"
+            dt
+          else
+            nil
+          end
         rescue ArgumentError, TypeError
           # Invalid input
           nil

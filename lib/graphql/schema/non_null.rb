@@ -1,47 +1,60 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   class Schema
     # Represents a non null type in the schema.
-    # Wraps a {Schema::Member} when it is required.
-    # @see {Schema::Member::TypeSystemHelpers#to_non_null_type}
+    # Wraps a [Schema::Member](rdoc-ref:Schema::Member) when it is required.
+    # See [Schema::Member::TypeSystemHelpers#to_non_null_type](rdoc-ref:Schema::Member::TypeSystemHelpers#to_non_null_type)
     class NonNull < GraphQL::Schema::Wrapper
       include Schema::Member::ValidatesInput
 
-      def to_graphql
-        @of_type.graphql_definition.to_non_null_type
-      end
-
-       # @return [GraphQL::TypeKinds::NON_NULL]
+      # **Returns**
+      #
+      # - `GraphQL::TypeKinds::NON_NULL`
+      #
+      # :call-seq:
+      #   kind() -> GraphQL::TypeKinds::NON_NULL
       def kind
         GraphQL::TypeKinds::NON_NULL
       end
 
-      # @return [true]
+      # **Returns**
+      #
+      # - `true`
+      #
+      # :call-seq:
+      #   non_null?() -> true
       def non_null?
         true
       end
 
-      # @return [Boolean] True if this type wraps a list type
+      # **Returns**
+      #
+      # - `Boolean` — True if this type wraps a list type
+      #
+      # :call-seq:
+      #   list?() -> bool
       def list?
         @of_type.list?
       end
 
       def to_type_signature
-        "#{@of_type.to_type_signature}!"
+        @type_signature ||= -"#{@of_type.to_type_signature}!"
       end
 
       def inspect
         "#<#{self.class.name} @of_type=#{@of_type.inspect}>"
       end
 
-      def validate_input(value, ctx)
+      def validate_input(value, ctx, max_errors: nil)
         if value.nil?
           result = GraphQL::Query::InputValidationResult.new
           result.add_problem("Expected value to not be null")
           result
         else
-          of_type.validate_input(value, ctx)
+          of_type.validate_input(value, ctx, max_errors: max_errors)
         end
       end
 
@@ -51,6 +64,10 @@ module GraphQL
       end
 
       def coerce_input(value, ctx)
+        # `.validate_input` above is used for variables, but this method is used for arguments
+        if value.nil?
+          raise GraphQL::ExecutionError, "`null` is not a valid input for `#{to_type_signature}`, please provide a value for this argument."
+        end
         of_type.coerce_input(value, ctx)
       end
 

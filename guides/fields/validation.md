@@ -1,27 +1,19 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Fields
-title: Validation
-desc: Rails-like validations for arguments and fields
-index: 3
----
+# Validation
 
-Fields (and their arguments, and input object arguments) can be validated at runtime using built-in or custom validators.
+Arguments can be validated at runtime using built-in or custom validators.
 
-Validations are configured in `field(...)` or `argument(...)` calls:
+Validations are configured in `argument(...)` calls on fields or input objects:
 
 ```ruby
-argument :home_phone, String, required: true,
+argument :home_phone, String,
   description: "A US phone number",
   validates: { format: { with: /\d{3}-\d{3}-\d{4}/ } }
 ```
 
-or:
+or, `validates required: { ... }` inside a `field ... do ... end` block:
 
 ```ruby
-field :comments, [Comment], null: true,
+field :comments, [Comment],
   description: "Find comments by author ID or author name" do
   argument :author_id, ID, required: false
   argument :author_name, String, required: false
@@ -34,45 +26,48 @@ Validations can be provided with a keyword (`validates: { ... }`) or with a meth
 
 ## Built-In Validations
 
-All the validators below accept the following options:
-
-- `allow_blank: true` will permit any input that responds to `.blank?` and returns true for it.
-- `allow_null: true` will permit `null` (from JS) and/or `nil` (from Ruby) (bypassing the validation)
-- `message: "..."` customizes the error message when the validation fails
-
-For example:
-
-```ruby
-field :comments, [Comment], null: true,
-  description: "Find comments by author ID or author name" do
-  argument :author_id, ID, required: false
-  argument :author_name, String, required: false
-  # Include a message for the end user if the validation fails:
-  validates required: {
-    one_of: [:author_id, :author_name],
-    message: "May use either author_id or author_name, but not both."
-  }
-end
-```
-
 See each validator's API docs for details:
 
-- `length: { maximum: ..., minimum: ..., is: ..., within: ... }` {{ "Schema::Validator::LengthValidator" | api_doc }}
-- `format: { with: /.../, without: /.../ }` {{ "Schema::Validator::FormatValidator" | api_doc }}
-- `numericality: { greater_than:, greater_than_or_equal_to:, less_than:, less_than_or_equal_to:, other_than:, odd:, even: }` {{ "Schema::Validator::NumericalityValidator" | api_doc }}
-- `inclusion: { in: [...] }` {{ "Schema::Validator::InclusionValidator" | api_doc }}
-- `exclusion: { in: [...] }` {{ "Schema::Validator::ExclusionValidator" | api_doc }}
-- `required: { one_of: [...] }` {{ "Schema::Validator::RequiredValidator" | api_doc }}
-
+- `length: { maximum: ..., minimum: ..., is: ..., within: ... }` [Schema::Validator::LengthValidator](rdoc-ref:GraphQL::Schema::Validator::LengthValidator)
+- `format: { with: /.../, without: /.../ }` [Schema::Validator::FormatValidator](rdoc-ref:GraphQL::Schema::Validator::FormatValidator)
+- `numericality: { greater_than:, greater_than_or_equal_to:, less_than:, less_than_or_equal_to:, other_than:, odd:, even: }` [Schema::Validator::NumericalityValidator](rdoc-ref:GraphQL::Schema::Validator::NumericalityValidator)
+- `inclusion: { in: [...] }` [Schema::Validator::InclusionValidator](rdoc-ref:GraphQL::Schema::Validator::InclusionValidator)
+- `exclusion: { in: [...] }` [Schema::Validator::ExclusionValidator](rdoc-ref:GraphQL::Schema::Validator::ExclusionValidator)
+- `required: { one_of: [...] }` [Schema::Validator::RequiredValidator](rdoc-ref:GraphQL::Schema::Validator::RequiredValidator)
+- `allow_blank: true|false` [Schema::Validator::AllowBlankValidator](rdoc-ref:GraphQL::Schema::Validator::AllowBlankValidator)
+- `allow_null: true|false` [Schema::Validator::AllowNullValidator](rdoc-ref:GraphQL::Schema::Validator::AllowNullValidator)
+- `all: { ... }` [Schema::Validator::AllValidator](rdoc-ref:GraphQL::Schema::Validator::AllValidator)
 
 Some of the validators accept customizable messages for certain validation failures; see the API docs for examples.
+
+`allow_blank:` and `allow_null:` may affect other validations, for example:
+
+```ruby
+validates: { format: { with: /\A\d{4}\Z/ }, allow_blank: true }
+```
+
+Will permit any String containing four digits, or the empty string (`""`) if Rails is loaded. (GraphQL-Ruby checks for `.blank?`, which is usually defined by Rails.)
+
+Alternatively, they can be used alone, for example:
+
+```ruby
+argument :id, ID, required: false, validates: { allow_null: true }
+```
+
+Will permit any query that passes `id: null`.
+
+Validation options may also be passed as procs that accept no parameters, for example:
+
+```ruby
+validates :title, String, validates: { format: { with: -> { Flipper.enabled?(:new_title_format) ? NEW_TITLE_FORMAT : /.*/ }}
+```
 
 ## Custom Validators
 
 You can write custom validators, too. A validator is a class that extends `GraphQL::Schema::Validator`. It should implement:
 
 - `def initialize(..., **default_options)` to accept any validator-specific options and pass along the defaults to `super(**default_options)`
-- `def validate(object, context, value)` which is called at runtime to validate `value`. It may return a String error message or an Array of Strings. GraphQL-Ruby will add those messages to the top-level `"errors"` array along with runtime context information.
+- `def validate(_empty, context, value)` which is called at runtime to validate `value`. It may return a String error message or an Array of Strings. GraphQL-Ruby will add those messages to the top-level `"errors"` array along with runtime context information.
 
 Then, custom validators can be attached either:
 
@@ -80,5 +75,3 @@ Then, custom validators can be attached either:
 - by keyword, if the keyword is registered with `GraphQL::Schema::Validator.install(:custom, MyCustomValidator)`. (That would support `validates: { custom: { some: :options }})`.)
 
 Validators are initialized when the schema is constructed (at application boot), and `validate(...)` is called while executing the query. There's one `Validator` instance for each configuration on each field, argument, or input object. (`Validator` instances aren't shared.)
-
-

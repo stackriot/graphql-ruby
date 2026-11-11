@@ -1,16 +1,19 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module Introspection
     class DynamicFields < Introspection::BaseObject
-      field :__typename, String, "The name of this type", null: false, extras: [:irep_node]
+      field :__typename, String, "The name of this type", null: false, dynamic_introspection: true, resolve_each: true
 
-      # `irep_node:` will be nil for the interpreter, since there is no such thing
-      def __typename(irep_node: nil)
-        if context.interpreter?
-          object.class.graphql_name
-        else
-          irep_node.owner_type.name
-        end
+      #: -> ::String
+      def __typename
+        self.class.__typename(object, context)
+      end
+
+      #: (untyped object, GraphQL::Query::Context context) -> ::String
+      def self.__typename(object, context)
+        object.class.graphql_name
       end
     end
   end

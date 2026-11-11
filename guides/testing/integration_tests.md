@@ -1,14 +1,6 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Testing
-title: Integration Tests
-desc: Run the whole GraphQL stack in tests
-index: 2
----
+# Integration Tests
 
-Besides testing {% internal_link "schema structure", "/testing/schema_structure" %}, you should also test your GraphQL system's behavior. There are really a few levels to this:
+Besides testing [schema structure](/testing/schema_structure), you should also test your GraphQL system's behavior. There are really a few levels to this:
 
 - __Application-level__ behaviors, like business logic, permissions, and persistence. These behaviors may be shared by your API and user interface.
 - __Interface-level__ behaviors, like GraphQL fields, mutations, error scenarios, and HTTP-specific behaviors. These are unique to your GraphQL system.
@@ -82,7 +74,7 @@ it "doesn't show draft posts to anyone except their author" do
   }
   GRAPHQL
 
-  post_id = MySchema.id_from_object(post, Types::Post, {})
+  post_id = MySchema.id_from_object(draft_post, Types::Post, {})
 
   # Authors can see their drafts:
   author_result = MySchema.execute(query_string, context: { viewer: author }, variables: { id: post_id })
@@ -104,7 +96,7 @@ GraphQL is usually served over HTTP. You probably want tests that make sure that
 - Authentication headers are used to load a `context[:viewer]`
 
 
-In Rails, you might use a [functional test](https://guides.rubyonrails.org/testing.html#functional-tests-for-your-controllers) for this, for example:
+In Rails, you might use a [functional test](https://guides.rubyonrails.org/testing.html#functional-testing-for-controllers) for this, for example:
 
 ```ruby
 it "loads user token into the viewer" do
@@ -120,6 +112,6 @@ it "loads user token into the viewer" do
     headers: { "Authorization" => "Bearer #{user.auth_token}" }
 
   json_response = JSON.parse(@response.body)
-  assert_equal user.username, json_response["data"]["viewer"], "Authenticated requests load the viewer"
+  assert_equal user.username, json_response["data"]["viewer"]["username"], "Authenticated requests load the viewer"
 end
 ```

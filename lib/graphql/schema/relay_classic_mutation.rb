@@ -1,5 +1,6 @@
 # frozen_string_literal: true
-require "graphql/types/string"
+#--
+# typed: strict
 
 module GraphQL
   class Schema
@@ -18,115 +19,55 @@ module GraphQL
     # - using a single `input:` argument makes it easy to post whole JSON objects to the mutation
     #   using one GraphQL variable (`$input`) instead of making a separate variable for each argument.
     #
-    # @see {GraphQL::Schema::Mutation} for an example, it's basically the same.
-    #
+    # See [GraphQL::Schema::Mutation](rdoc-ref:GraphQL::Schema::Mutation) for an example, it's basically the same.
     class RelayClassicMutation < GraphQL::Schema::Mutation
+      include GraphQL::Schema::HasSingleInputArgument
+
+      argument :client_mutation_id, String, "A unique identifier for the client performing the mutation.", required: false
+
       # The payload should always include this field
-      field(:client_mutation_id, String, "A unique identifier for the client performing the mutation.", null: true)
+      field(:client_mutation_id, String, "A unique identifier for the client performing the mutation.", hash_key: :client_mutation_id)
       # Relay classic default:
       null(true)
 
-      # Override {GraphQL::Schema::Resolver#resolve_with_support} to
+    # Override [resolve_with_support](rdoc-ref:#resolve_with_support) to
       # delete `client_mutation_id` from the kwargs.
+      #: (**untyped inputs) -> untyped
       def resolve_with_support(**inputs)
-        # Without the interpreter, the inputs are unwrapped by an instrumenter.
-        # But when using the interpreter, no instrumenters are applied.
-        if context.interpreter?
-          input = inputs[:input].to_kwargs
-
-          new_extras = field ? field.extras : []
-          all_extras = self.class.extras + new_extras
-
-          # Transfer these from the top-level hash to the
-          # shortcutted `input:` object
-          all_extras.each do |ext|
-            # It's possible that the `extra` was not passed along by this point,
-            # don't re-add it if it wasn't given here.
-            if inputs.key?(ext)
-              input[ext] = inputs[ext]
-            end
-          end
-        else
-          input = inputs
-        end
+        input = inputs[:input].to_kwargs
 
         if input
-          # This is handled by Relay::Mutation::Resolve, a bit hacky, but here we are.
           input_kwargs = input.to_h
           client_mutation_id = input_kwargs.delete(:client_mutation_id)
-        else
-          # Relay Classic Mutations with no `argument`s
-          # don't require `input:`
-          input_kwargs = {}
+          inputs[:input] = input_kwargs
         end
 
-        return_value = if input_kwargs.any?
-          super(**input_kwargs)
-        else
-          super()
-        end
+        return_value = super(**inputs)
 
-        # Again, this is done by an instrumenter when using non-interpreter execution.
-        if context.interpreter?
-          context.schema.after_lazy(return_value) do |return_hash|
-            # It might be an error
-            if return_hash.is_a?(Hash)
-              return_hash[:client_mutation_id] = client_mutation_id
-            end
-            return_hash
+        context.query.after_lazy(return_value) do |return_hash|
+          # It might be an error
+          if return_hash.is_a?(Hash)
+            return_hash[:client_mutation_id] = client_mutation_id
           end
-        else
-          return_value
+          return_hash
         end
       end
 
-      class << self
-        # The base class for generated input object types
-        # @param new_class [Class] The base class to use for generating input object definitions
-        # @return [Class] The base class for this mutation's generated input object (default is {GraphQL::Schema::InputObject})
-        def input_object_class(new_class = nil)
-          if new_class
-            @input_object_class = new_class
-          end
-          @input_object_class || (superclass.respond_to?(:input_object_class) ? superclass.input_object_class : GraphQL::Schema::InputObject)
+      #: -> void
+      def call
+        # The runtime prepares arguments before calling this
+        prepared_arguments = @prepared_arguments #: as !nil
+        input = prepared_arguments[:input]&.to_kwargs
+
+        if input
+          client_mutation_id = input.delete(:client_mutation_id)
+          prepared_arguments[:input] = input
         end
 
-        # @param new_input_type [Class, nil] If provided, it configures this mutation to accept `new_input_type` instead of generating an input type
-        # @return [Class] The generated {Schema::InputObject} class for this mutation's `input`
-        def input_type(new_input_type = nil)
-          if new_input_type
-            @input_type = new_input_type
-          end
-          @input_type ||= generate_input_type
-        end
+        super
 
-        # Extend {Schema::Mutation.field_options} to add the `input` argument
-        def field_options
-          sig = super
-          # Arguments were added at the root, but they should be nested
-          sig[:arguments].clear
-          sig[:arguments][:input] = { type: input_type, required: true, description: "Parameters for #{graphql_name}" }
-          sig
-        end
-
-        private
-
-        # Generate the input type for the `input:` argument
-        # To customize how input objects are generated, override this method
-        # @return [Class] a subclass of {.input_object_class}
-        def generate_input_type
-          mutation_args = arguments
-          mutation_name = graphql_name
-          mutation_class = self
-          Class.new(input_object_class) do
-            graphql_name("#{mutation_name}Input")
-            description("Autogenerated input type of #{mutation_name}")
-            mutation(mutation_class)
-            mutation_args.each do |_name, arg|
-              add_argument(arg)
-            end
-            argument :client_mutation_id, String, "A unique identifier for the client performing the mutation.", required: false
-          end
+        if (return_value = exec_result[exec_index]).is_a?(Hash)
+          return_value[:client_mutation_id] = client_mutation_id
         end
       end
     end

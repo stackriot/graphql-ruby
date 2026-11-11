@@ -73,26 +73,31 @@ describe GraphQL::StaticValidation::RequiredArgumentsArePresent do
 
   describe "when a required arg is hidden" do
     class Query < GraphQL::Schema::Object
-      field :int, Integer, null: true do
-        argument :input, Integer, required: true do
+      field :int, Integer, resolve_static: true do
+        argument :input, Integer do
           def visible?(*)
             false
           end
         end
       end
 
-      def int(input: -1)
+      def self.int(context, input: -1)
         input
+      end
+
+      def int(input: -1)
+        self.class.int(context, input: input)
       end
     end
 
     class HiddenArgSchema < GraphQL::Schema
+      use GraphQL::Schema::Warden if ADD_WARDEN
       query(Query)
     end
 
     it "Doesn't require a hidden input" do
       res = HiddenArgSchema.execute("{ int }")
-      assert_equal -1, res["data"]["int"]
+      assert_equal(-1, res["data"]["int"])
     end
   end
 end

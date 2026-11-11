@@ -1,9 +1,13 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   module StaticValidation
     # Track fragment dependencies for operations
     # and expose the fragment definitions which
     # are used by a given operation
+    #--
+    # @requires_ancestor: GraphQL::StaticValidation::BaseVisitor
     module DefinitionDependencies
       attr_reader :dependencies
 
@@ -65,22 +69,33 @@ module GraphQL
       end
 
       # A map of operation definitions to an array of that operation's dependencies
-      # @return [DependencyMap]
+      #
+      # **Returns**
+      #
+      # - `DependencyMap`
+      #
+      # :call-seq:
+      #   dependency_map(&block) -> DependencyMap
       def dependency_map(&block)
         @dependency_map ||= resolve_dependencies(&block)
       end
 
-
       # Map definition AST nodes to the definition AST nodes they depend on.
       # Expose circular dependencies.
       class DependencyMap
-        # @return [Array<GraphQL::Language::Nodes::FragmentDefinition>]
+        # **Returns**
+        #
+        # - `Array<GraphQL::Language::Nodes::FragmentDefinition>`
         attr_reader :cyclical_definitions
 
-        # @return [Hash<Node, Array<GraphQL::Language::Nodes::FragmentSpread>>]
+        # **Returns**
+        #
+        # - `Hash<Node, Array<GraphQL::Language::Nodes::FragmentSpread>>`
         attr_reader :unmet_dependencies
 
-        # @return [Array<GraphQL::Language::Nodes::FragmentDefinition>]
+        # **Returns**
+        #
+        # - `Array<GraphQL::Language::Nodes::FragmentDefinition>`
         attr_reader :unused_dependencies
 
         def initialize
@@ -90,7 +105,12 @@ module GraphQL
           @unused_dependencies = []
         end
 
-        # @return [Array<GraphQL::Language::Nodes::AbstractNode>] dependencies for `definition_node`
+        # **Returns**
+        #
+        # - `Array<GraphQL::Language::Nodes::AbstractNode>` — dependencies for `definition_node`
+        #
+        # :call-seq:
+        #   [](definition_node) -> Array[GraphQL::Language::Nodes::AbstractNode]
         def [](definition_node)
           @dependencies[definition_node]
         end
@@ -128,8 +148,16 @@ module GraphQL
         # same name as if they were the same name. If _any_ of the fragments
         # with that name has a dependency, we record it.
         independent_fragment_nodes = @defdep_fragment_definitions.values.flatten - @defdep_immediate_dependencies.keys
-
+        visited_fragment_names = Set.new
+        # Fragments that share dependencies would otherwise copy them once per path, doubling with each layer.
+        recorded_dependencies = Hash.new { |h, k| h[k] = {}.compare_by_identity }.compare_by_identity
         while fragment_node = independent_fragment_nodes.pop
+          if visited_fragment_names.add?(fragment_node.name)
+            # this is a new fragment name
+          else
+            # this is a duplicate fragment name
+            next
+          end
           loops += 1
           if loops > max_loops
             raise("Resolution loops exceeded the number of definitions; infinite loop detected. (Max: #{max_loops}, Current: #{loops})")
@@ -145,8 +173,18 @@ module GraphQL
           else
             fragment_usages.each do |definition_node|
               # Register the dependency AND second-order dependencies
-              dependency_map[definition_node] << fragment_node
-              dependency_map[definition_node].concat(dependency_map[fragment_node])
+              definition_dependencies = dependency_map[definition_node]
+              recorded = recorded_dependencies[definition_node]
+              if !recorded.key?(fragment_node)
+                recorded[fragment_node] = true
+                definition_dependencies << fragment_node
+              end
+              dependency_map[fragment_node].each do |transitive_node|
+                if !recorded.key?(transitive_node)
+                  recorded[transitive_node] = true
+                  definition_dependencies << transitive_node
+                end
+              end
               # Since we've registered it, remove it from our to-do list
               deps = @defdep_immediate_dependencies[definition_node]
               # Can't find a way to _just_ delete from `deps` and return the deleted entries
@@ -185,9 +223,9 @@ module GraphQL
           end
         end
 
-        # Anything left in @immediate_dependencies is cyclical
+        # Anything left in `@immediate_dependencies` is cyclical
         cyclical_nodes = @defdep_immediate_dependencies.keys.map { |n| @defdep_node_paths[n] }
-        # @immediate_dependencies also includes operation names, but we don't care about
+        # `@immediate_dependencies` also includes operation names, but we don't care about
         # those. They became nil when we looked them up on `@fragment_definitions`, so remove them.
         cyclical_nodes.compact!
         dependency_map.cyclical_definitions.concat(cyclical_nodes)

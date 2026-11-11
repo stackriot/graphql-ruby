@@ -9,16 +9,51 @@ describe GraphQL::Schema::Directive::Feature do
       end
     end
 
-    class Query < GraphQL::Schema::Object
-      field :int, Integer, null: false
+    # Based on feature but uses a runtime check instead of ahead-of-time
+    class RuntimeFeature < GraphQL::Schema::Directive
+      locations(GraphQL::Schema::Directive::FRAGMENT_SPREAD)
 
-      def int
+      argument :flag, String,
+        description: "The name of the feature to check before continuing"
+
+      def self.resolve(object, arguments, context, &block)
+        flag_name = arguments[:flag]
+        if context[flag_name]
+          yield
+        else
+          # pass
+        end
+      end
+
+      def self.resolve_fragment_spread(ast_node, parent_type, objects, arguments, context)
+        flag_name = arguments[:flag]
+        if context[flag_name]
+          nil
+        else
+          FailsFlag.new
+        end
+      end
+
+      class FailsFlag
+        include GraphQL::Execution::HaltExecution
+      end
+    end
+
+    class Query < GraphQL::Schema::Object
+      field :int, Integer, null: false, resolve_static: true
+
+      def self.int(context)
         context[:int] ||= 0
         context[:int] += 1
+      end
+
+      def int
+        self.class.int(context)
       end
     end
 
     directive(Feature)
+    directive(RuntimeFeature)
     query(Query)
   end
 
@@ -74,5 +109,29 @@ describe GraphQL::Schema::Directive::Feature do
     '
     res = FeatureSchema.execute(str)
     assert_equal ["'@feature' can't be applied to queries (allowed: fields, fragment spreads, inline fragments)"], res["errors"].map { |e| e["message"] }
+  end
+
+  it "runs or skips on deeply nested fragment spreads fragments" do
+    str = "{
+      int
+      ... Q1
+    }
+
+    fragment Q1 on Query {
+      ... Q2
+    }
+
+    fragment Q2 on Query {
+      ... Q3 @runtimeFeature(flag: \"x\")
+    }
+
+    fragment Q3 on Query {
+      i2: int
+    }
+    "
+
+    res = FeatureSchema.execute(str, context: { "x" => true })
+    assert_equal 1, res["data"]["int"]
+    assert_equal 2, res["data"]["i2"]
   end
 end

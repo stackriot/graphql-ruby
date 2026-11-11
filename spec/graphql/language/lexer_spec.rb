@@ -1,163 +1,85 @@
 # frozen_string_literal: true
 require "spec_helper"
-
+require_relative "./lexer_examples"
 describe GraphQL::Language::Lexer do
   subject { GraphQL::Language::Lexer }
+  include LexerExamples
 
-  describe ".tokenize" do
-    let(:query_string) {%|
-      {
-        query getCheese {
-          cheese(id: 1) {
-            ... cheeseFields
-          }
-        }
-      }
-    |}
-    let(:tokens) { subject.tokenize(query_string) }
+  def assert_bad_unicode(string, expected_err_message = "Parse error on bad Unicode escape sequence")
+    err = assert_raises(GraphQL::ParseError) do
+      subject.tokenize(string)
+    end
+    assert_equal expected_err_message, err.message
+  end
 
-    it "makes utf-8 comments" do
-      tokens = subject.tokenize("# 不要!\n{")
-      comment_token = tokens.first.prev_token
-      assert_equal "# 不要!", comment_token.to_s
+  it "rejects unicode escapes outside the valid range" do
+    assert_bad_unicode('"\\u{FFFFFFFFFF}"', 'Bad unicode escape in "\\\\u{FFFFFFFFFF}"')
+  end
+
+  it "reports positions correctly after multibyte input" do
+    err = assert_raises(GraphQL::ParseError) do
+      subject.tokenize("{\n  # 日本語\n  field(arg: -foo)\n}")
     end
 
-    it "keeps track of previous_token" do
-      assert_equal tokens[0], tokens[1].prev_token
-    end
+    assert_equal 3, err.line
+    assert_equal 14, err.col
+  end
 
-    it "allows escaped quotes in strings" do
-      tokens = subject.tokenize('"a\\"b""c"')
-      assert_equal 'a"b', tokens[0].value
-      assert_equal 'c', tokens[1].value
-    end
-
-    it "handles escaped backslashes before escaped quotes" do
-      tokens = subject.tokenize('text: "b\\\\", otherText: "a"')
-      assert_equal ['text', ':', 'b\\', 'otherText', ':', 'a',], tokens.map(&:value)
-    end
-
-    describe "block strings" do
-      let(:query_string) { %|{ a(b: """\nc\n \\""" d\n""" """""e""""")}|}
-
-      it "tokenizes them" do
-        assert_equal "c\n \"\"\" d", tokens[5].value
-        assert_equal "\"\"e\"\"", tokens[6].value
+  [
+    ["{ __typename }", 0, 1, 1],
+    ["# comment\n# comment\n  { __typename }", 2, 3, 3],
+    ["{\n  __typename\n}", 1, 2, 3],
+  ].each do |query, max_tokens, line, col|
+    it "reports the token exceeding max_tokens=#{max_tokens} at #{line}:#{col}" do
+      lexer = subject.new(query, max_tokens: max_tokens)
+      err = assert_raises(GraphQL::ParseError) do
+        lexer.advance until lexer.finished?
       end
 
-      it "tokenizes 10 quote edge case correctly" do
-        tokens = subject.tokenize('""""""""""')
-        assert_equal '""', tokens[0].value # first 8 quotes are a valid block string """"""""
-        assert_equal '', tokens[1].value # last 2 quotes are a valid string ""
-      end
-
-      it "tokenizes with nested single quote strings correctly" do
-        tokens = subject.tokenize('"""{"x"}"""')
-        assert_equal '{"x"}', tokens[0].value
-
-        tokens = subject.tokenize('"""{"foo":"bar"}"""')
-        assert_equal '{"foo":"bar"}', tokens[0].value
-      end
-
-      it "tokenizes empty block strings correctly" do
-        empty_block_string = '""""""'
-        tokens = subject.tokenize(empty_block_string)
-
-        assert_equal '', tokens[0].value
-      end
-
-      it "tokenizes escaped backslashes at the end of blocks" do
-        tokens = subject.tokenize('text: """b\\\\""", otherText: "a"')
-        assert_equal ['text', ':', 'b\\', 'otherText', ':', 'a',], tokens.map(&:value)
-      end
+      assert_equal "This query is too large to execute.", err.message
+      assert_equal [line, col], [err.line, err.col]
     end
+  end
 
-    it "unescapes escaped characters" do
-      assert_equal "\" \\ / \b \f \n \r \t", subject.tokenize('"\\" \\\\ \\/ \\b \\f \\n \\r \\t"').first.to_s
+  it "reports column one after a newline" do
+    tokens = subject.tokenize("{ field }\n# 日本語\nfragment F on Type { field }")
+    fragment_token = tokens.find { |token| token.first == :FRAGMENT }
+
+    assert_equal [:FRAGMENT, 3, 1, "fragment"], fragment_token
+  end
+
+  it "reports error positions with CR, LF, and CRLF line terminators" do
+    ["\r", "\n", "\r\n"].each do |newline|
+      query_string = ["{", '  field(arg: "日本語")', "  field(arg: -foo)", "}"].join(newline)
+      err = assert_raises(GraphQL::ParseError) { subject.tokenize(query_string) }
+
+      assert_equal [3, 14], [err.line, err.col]
     end
+  end
 
-    it "unescapes escaped unicode characters" do
-      assert_equal "\t", subject.tokenize('"\\u0009"').first.to_s
+  it "reports column one after consecutive line terminators" do
+    ["\r", "\n", "\r\n"].each do |newline|
+      tokens = subject.tokenize(['{ field(arg: "日本語") }', "", "fragment F on Type { field }"].join(newline))
+      fragment_token = tokens.find { |token| token.first == :FRAGMENT }
+
+      assert_equal [:FRAGMENT, 3, 1, "fragment"], fragment_token
     end
+  end
 
-    it "rejects bad unicode, even when there's good unicode in the string" do
-      assert_equal :BAD_UNICODE_ESCAPE, subject.tokenize('"\\u0XXF \\u0009"').first.name
-    end
+  it "reports positions with mixed line terminators and multibyte input" do
+    tokens = subject.tokenize("{ field(arg: \"日本語\") }\r\r\n\n\rfragment F on Type { field }\r\n")
+    fragment_token = tokens.find { |token| token.first == :FRAGMENT }
 
-    it "rejects truly invalid UTF-8 bytes" do
-      error_filename = "spec/support/parser/filename_example_invalid_utf8.graphql"
-      assert_equal :BAD_UNICODE_ESCAPE, subject.tokenize(File.read(error_filename)).first.name
-    end
+    assert_equal [:FRAGMENT, 5, 1, "fragment"], fragment_token
+  end
 
-    it "rejects unicode that's well-formed but results in invalidly-encoded strings" do
-      # when the string here gets tokenized into an actual `:STRING`, it results in `valid_encoding?` being false for
-      # the ruby string so application code usually blows up trying to manipulate it
-      assert_equal :BAD_UNICODE_ESCAPE, subject.tokenize('"\\ud83c\\udf2c"').first.name
-    end
+  it "reraises unexpected argument errors" do
+    lexer = subject.new("{")
+    scanner = lexer.instance_variable_get(:@scanner)
 
-    it "clears the previous_token between runs" do
-      tok_2 = subject.tokenize(query_string)
-      assert_nil tok_2[0].prev_token
-    end
-
-    it "counts string position properly" do
-      tokens = subject.tokenize('{ a(b: "c")}')
-      str_token = tokens[5]
-      assert_equal :STRING, str_token.name
-      assert_equal "c", str_token.value
-      assert_equal 8, str_token.col
-      assert_equal '(STRING "c" [1:8])', str_token.inspect
-      rparen_token = tokens[6]
-      assert_equal '(RPAREN ")" [1:11])', rparen_token.inspect
-    end
-
-    it "counts block string line properly" do
-      str = <<-GRAPHQL
-      """
-      Here is a
-      multiline description
-      """
-      type Query {
-        a: B
-      }
-
-      "Here's another description"
-
-      type B {
-        a: B
-      }
-
-      """
-      And another
-      multiline description
-      """
-
-
-      type C {
-        a: B
-      }
-      GRAPHQL
-
-      tokens = subject.tokenize(str)
-
-      string_tok, type_keyword_tok, query_name_tok,
-        _curly, _ident, _colon, _ident, _curly,
-        string_tok_2, type_keyword_tok_2, b_name_tok,
-        _curly, _ident, _colon, _ident, _curly,
-        string_tok_3, type_keyword_tok_3, c_name_tok = tokens
-
-      assert_equal 1, string_tok.line
-      assert_equal 5, type_keyword_tok.line
-      assert_equal 5, query_name_tok.line
-
-      # Make sure it handles the empty spaces, too
-      assert_equal 9, string_tok_2.line
-      assert_equal 11, type_keyword_tok_2.line
-      assert_equal 11, b_name_tok.line
-
-      assert_equal 15, string_tok_3.line
-      assert_equal 21, type_keyword_tok_3.line
-      assert_equal 21, c_name_tok.line
+    scanner.stub(:skip, ->(*) { raise ArgumentError, "unexpected failure" }) do
+      err = assert_raises(ArgumentError) { lexer.advance }
+      assert_equal "unexpected failure", err.message
     end
   end
 end

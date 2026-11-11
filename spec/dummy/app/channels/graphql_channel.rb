@@ -12,23 +12,33 @@ class GraphqlChannel < ActionCable::Channel::Base
   end
 
   class CounterIncremented < GraphQL::Schema::Subscription
-    @@call_count = 0
-    subscription_scope :subscriber_id
+    def self.reset_call_count
+      @@call_count = 0
+    end
+
+    reset_call_count
 
     field :new_value, Integer, null: false
 
     def update
+      if object
+        if object.value == "server-unsubscribe"
+          unsubscribe
+        elsif object.value == "server-unsubscribe-with-message"
+          unsubscribe({ new_value: 9999 })
+        end
+      end
       result = {
         new_value: @@call_count += 1
       }
-      puts "  -> CounterIncremented#update(#{context[:subscriber_id]}): #{result}"
+      puts "  -> CounterIncremented#update: #{result}"
       result
     end
   end
 
   class SubscriptionType < GraphQL::Schema::Object
     field :payload, PayloadType, null: false do
-      argument :id, ID, required: true
+      argument :id, ID
     end
 
     field :counter_incremented, subscription: CounterIncremented
@@ -77,12 +87,12 @@ class GraphqlChannel < ActionCable::Channel::Base
     }
 
     puts "[GraphQLSchema.execute] #{query} || #{variables}"
-    result = GraphQLSchema.execute({
+    result = GraphQLSchema.execute(
       query: query,
       context: context,
       variables: variables,
       operation_name: operation_name
-    })
+    )
 
     payload = {
       result: result.to_h,

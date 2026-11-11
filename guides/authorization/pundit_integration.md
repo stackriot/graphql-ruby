@@ -1,12 +1,4 @@
----
-layout: guide
-search: true
-section: Authorization
-title: Pundit Integration
-desc: Hook up GraphQL to Pundit policies
-index: 4
-pro: true
----
+# Pundit Integration
 
 [GraphQL::Pro](https://graphql.pro) includes an integration for powering GraphQL authorization with [Pundit](https://github.com/varvet/pundit) policies.
 
@@ -38,15 +30,15 @@ context = {
 MySchema.execute(..., context: context)
 ```
 
-And read on about the different features of the integration:
+### Rails Generator
 
-- [Authorizing Objects](#authorizing-objects)
-- [Scoping Lists and Connections](#scopes)
-- [Authorizing Fields](#authorizing-fields)
-- [Authorizing Arguments](#authorizing-arguments)
-- [Authorizing Mutations](#authorizing-mutations)
-- [Custom Policy Lookup](#custom-policy-lookup)
-- [Custom User Lookup](#custom-user-lookup)
+If your schema files follow the same convention as `rails generate graphql:install`, then you can install the Pundit integration with a Rails generator:
+
+```bash
+$ rails generate graphql:pundit:install
+```
+
+This will insert all the necessary `include ...`s described below. Alternatively, check the docs below to mix in `PunditIntegration`'s modules.
 
 ## Authorizing Objects
 
@@ -121,11 +113,11 @@ end
 
 #### Handling Unauthorized Objects
 
-When any Policy method returns `false`, the unauthorized object is passed to {{ "Schema.unauthorized_object" | api_doc }}, as described in {% internal_link "Handling unauthorized objects", "/authorization/authorization#handling-unauthorized-objects" %}.
+When any Policy method returns `false`, the unauthorized object is passed to [Schema.unauthorized_object](rdoc-ref:GraphQL::Schema.unauthorized_object), as described in [Handling unauthorized objects](/authorization/authorization#handling-unauthorized-objects).
 
 ## Scopes
 
-The Pundit integration adds [Pundit scopes](https://github.com/varvet/pundit#scopes) to GraphQL-Ruby's {% internal_link "list scoping", "/authorization/scoping" %} feature. Any list or connection will be scoped. If a scope is missing, the query will crash rather than risk leaking unfiltered data.
+The Pundit integration adds [Pundit scopes](https://github.com/varvet/pundit#scopes) to GraphQL-Ruby's [list scoping](/authorization/scoping) feature. Any list or connection will be scoped. If a scope is missing, the query will crash rather than risk leaking unfiltered data.
 
 To scope lists of interface or union type, include the integration in your base union class and base interface module:
 
@@ -139,10 +131,6 @@ module BaseInterface
   include GraphQL::Pro::PunditIntegration::InterfaceIntegration
 end
 ```
-
-Pundit scopes [don't play well](https://github.com/rmosolgo/graphql-ruby/issues/2008) with `Array`s, so the integration _skips_ scopes on Arrays. You can also opt out on a field-by-field basis as described below.
-
-You can also customize how the scopes are looked up and applied, see below.
 
 #### Bypassing scopes
 
@@ -195,7 +183,7 @@ class Types::JobPosting < Types::BaseObject
 
   # But, only allow `JobPostingPolicy#staff?` users to see
   # who has applied
-  field :applicants, [Types::User], null: true,
+  field :applicants, [Types::User],
     pundit_role: :staff
 end
 ```
@@ -210,7 +198,7 @@ You can override the policy class for a field using `pundit_policy_class:`, for 
 class Types::JobPosting < Types::BaseObject
   # Only allow `ApplicantsPolicy#staff?` users to see
   # who has applied
-  field :applicants, [Types::User], null: true,
+  field :applicants, [Types::User],
     pundit_role: :staff,
     pundit_policy_class: ApplicantsPolicy
     # Or with a string:
@@ -255,7 +243,7 @@ Now, arguments accept a `pundit_role:` option, for example:
 
 ```ruby
 class Types::Company < Types::BaseObject
-  field :employees, Types::Employee.connection_type, null: true do
+  field :employees, Types::Employee.connection_type do
     # Only admins can filter employees by email:
     argument :email, String, required: false, pundit_role: :admin
   end
@@ -340,7 +328,7 @@ Beyond the normal [object reading permissions](#authorizing-objects), you can ad
 
 ```ruby
 class Mutations::FireEmployee < Mutations::BaseMutation
-  argument :employee_id, ID, required: true,
+  argument :employee_id, ID,
     loads: Types::Employee,
     pundit_role: :supervisor,
 end
@@ -368,11 +356,11 @@ The method is called with:
 
 Since it's a mutation method, you can also access `context` in that method.
 
-Whatever that method returns will be treated as an early return value for the mutation, so for example, you could return {% internal_link "errors as data", "/mutations/mutation_errors" %}:
+Whatever that method returns will be treated as an early return value for the mutation, so for example, you could return [errors as data](/mutations/mutation_errors):
 
 ```ruby
 class Mutations::BaseMutation < GraphQL::Schema::RelayClassicMutation
-  field :errors, [String], null: true
+  field :errors, [String]
 
   def unauthorized_by_pundit(owner, value)
     # Return errors as data:
@@ -380,6 +368,21 @@ class Mutations::BaseMutation < GraphQL::Schema::RelayClassicMutation
   end
 end
 ```
+
+## Authorizing Resolvers
+
+Resolvers are authorized just like [mutations](#authorizing-mutations), and require similar setup:
+
+```ruby
+# app/graphql/resolvers/base_resolver.rb
+class Resolvers::BaseResolver < GraphQL::Schema::Resolver
+  include GraphQL::Pro::PunditIntegration::ResolverIntegration
+  argument_class BaseArgument
+  # pundit_role nil # to disable authorization by default
+end
+```
+
+Beyond that, see [Authorizing Mutations](#authorizing-mutations) above for further details.
 
 ## Custom Policy Lookup
 
@@ -406,11 +409,11 @@ Here's an example of how the custom hooks can be installed:
 ```ruby
 module CustomPolicyLookup
   # Lookup policies in the `SystemAdmin::` namespace for system_admin users
+  # @return [Class]
   def pundit_policy_class_for(object, context)
     current_user = context[:current_user]
     if current_user.system_admin?
-      policy_class = SystemAdmin.const_get("#{object.class.name}Policy")
-      policy_class.new(current_user, object)
+      SystemAdmin.const_get("#{object.class.name}Policy")
     else
       super
     end

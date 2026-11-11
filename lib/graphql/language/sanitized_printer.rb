@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   module Language
     # A custom printer used to print sanitized queries. It inlines provided variables
@@ -10,11 +12,16 @@ module GraphQL
     # on the type of fields or arguments, we have to track the current object, field
     # and input type while printing the query.
     #
-    # @example Printing a scrubbed string
-    #   printer = QueryPrinter.new(query)
-    #   puts printer.sanitized_query_string
+    # See [Query#sanitized_query_string](rdoc-ref:Query#sanitized_query_string)
     #
-    # @see {Query#sanitized_query_string}
+    # **Examples**
+    #
+    # **Example: Printing a scrubbed string**
+    #
+    # ```ruby
+    # printer = QueryPrinter.new(query)
+    # puts printer.sanitized_query_string
+    # ```
     class SanitizedPrinter < GraphQL::Language::Printer
 
       REDACTED = "\"<REDACTED>\""
@@ -27,7 +34,12 @@ module GraphQL
         @inline_variables = inline_variables
       end
 
-      # @return [String, nil] A scrubbed query string, if the query was valid.
+      # **Returns**
+      #
+      # - `String, nil` — A scrubbed query string, if the query was valid.
+      #
+      # :call-seq:
+      #   sanitized_query_string() -> String | nil
       def sanitized_query_string
         if query.valid?
           print(query.document)
@@ -40,7 +52,7 @@ module GraphQL
         case node
         when FalseClass, Float, Integer, String, TrueClass
           if @current_argument && redact_argument_value?(@current_argument, node)
-            redacted_argument_value(@current_argument)
+            print_string(redacted_argument_value(@current_argument))
           else
             super
           end
@@ -51,9 +63,8 @@ module GraphQL
             @current_input_type = @current_input_type.of_type if @current_input_type.non_null?
           end
 
-          res = super
+          super
           @current_input_type = old_input_type
-          res
         else
           super
         end
@@ -79,7 +90,7 @@ module GraphQL
 
         arg_owner = @current_input_type || @current_directive || @current_field
         old_current_argument = @current_argument
-        @current_argument = arg_owner.arguments[argument.name]
+        @current_argument = arg_owner.get_argument(argument.name, @query.context)
 
         old_input_type = @current_input_type
         @current_input_type = @current_argument.type.non_null? ? @current_argument.type.of_type : @current_argument.type
@@ -89,11 +100,12 @@ module GraphQL
         else
           argument.value
         end
-        res = "#{argument.name}: #{print_node(argument_value)}".dup
+
+        print_string("#{argument.name}: ")
+        print_node(argument_value)
 
         @current_input_type = old_input_type
         @current_argument = old_current_argument
-        res
       end
 
       def coerce_argument_value_to_list?(type, value)
@@ -113,46 +125,40 @@ module GraphQL
       end
 
       def print_field(field, indent: "")
-        @current_field = query.schema.get_field(@current_type, field.name)
+        @current_field = query.types.field(@current_type, field.name)
         old_type = @current_type
         @current_type = @current_field.type.unwrap
-        res = super
+        super
         @current_type = old_type
-        res
       end
 
       def print_inline_fragment(inline_fragment, indent: "")
         old_type = @current_type
 
         if inline_fragment.type
-          @current_type = query.schema.types[inline_fragment.type.name]
+          @current_type = query.get_type(inline_fragment.type.name)
         end
 
-        res = super
+        super
 
         @current_type = old_type
-
-        res
       end
 
       def print_fragment_definition(fragment_def, indent: "")
         old_type = @current_type
-        @current_type = query.schema.types[fragment_def.type.name]
+        @current_type = query.get_type(fragment_def.type.name)
 
-        res = super
+        super
 
         @current_type = old_type
-
-        res
       end
 
       def print_directive(directive)
         @current_directive = query.schema.directives[directive.name]
 
-        res = super
+        super
 
         @current_directive = nil
-        res
       end
 
       # Print the operation definition but do not include the variable
@@ -162,16 +168,15 @@ module GraphQL
         @current_type = query.schema.public_send(operation_definition.operation_type)
 
         if @inline_variables
-          out = "#{indent}#{operation_definition.operation_type}".dup
-          out << " #{operation_definition.name}" if operation_definition.name
-          out << print_directives(operation_definition.directives)
-          out << print_selections(operation_definition.selections, indent: indent)
+          print_string("#{indent}#{operation_definition.operation_type}")
+          print_string(" #{operation_definition.name}") if operation_definition.name
+          print_directives(operation_definition.directives)
+          print_selections(operation_definition.selections, indent: indent)
         else
-          out = super
+          super
         end
 
         @current_type = old_type
-        out
       end
 
       private
@@ -193,7 +198,7 @@ module GraphQL
           end
 
           arguments = value.map do |key, val|
-            sub_type = type.arguments[key.to_s].type
+            sub_type = type.get_argument(key.to_s, @query.context).type
 
             GraphQL::Language::Nodes::Argument.new(
               name: key.to_s,
@@ -210,7 +215,12 @@ module GraphQL
             [value].map { |v| value_to_ast(v, type.of_type) }
           end
         when "ENUM"
-          GraphQL::Language::Nodes::Enum.new(name: value)
+          if value.is_a?(GraphQL::Language::Nodes::Enum)
+            # if it was a default value, it's already wrapped
+            value
+          else
+            GraphQL::Language::Nodes::Enum.new(name: value)
+          end
         else
           value
         end

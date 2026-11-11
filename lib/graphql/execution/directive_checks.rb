@@ -1,16 +1,23 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module Execution
     # Boolean checks for how an AST node's directives should
     # influence its execution
-    # @api private
-    module DirectiveChecks
+    module DirectiveChecks # :nodoc:
       SKIP = "skip"
       INCLUDE = "include"
 
       module_function
 
-      # @return [Boolean] Should this node be included in the query?
+      # **Returns**
+      #
+      # - `Boolean` — Should this node be included in the query?
+      #
+      # :call-seq:
+      #   include?(directive_ast_nodes, query) -> bool
+      #: (Array[GraphQL::Language::Nodes::Directive] directive_ast_nodes, GraphQL::Query query) -> bool
       def include?(directive_ast_nodes, query)
         directive_ast_nodes.each do |directive_ast_node|
           name = directive_ast_node.name
@@ -18,11 +25,13 @@ module GraphQL
           case name
           when SKIP
             args = query.arguments_for(directive_ast_node, directive_defn)
+            next if args.is_a?(GraphQL::ExecutionError)
             if args[:if] == true
               return false
             end
           when INCLUDE
             args = query.arguments_for(directive_ast_node, directive_defn)
+            next if args.is_a?(GraphQL::ExecutionError)
             if args[:if] == false
               return false
             end

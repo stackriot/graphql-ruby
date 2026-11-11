@@ -1,17 +1,8 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: GraphQL Pro - OperationStore
-title: Server Management
-desc: Tips for administering persisted queries with OperationStore
-index: 5
-pro: true
----
+# Server Management
 
-After {% internal_link "getting started","/operation_store/getting_started" %}, here some things to keep in mind.
+After [getting started](/operation_store/getting_started), here some things to keep in mind.
 
-### Rejecting Arbitrary Queries
+## Rejecting Arbitrary Queries
 
 With persisted queries, you can stop accepting arbitrary GraphQL input. This way, malicious users can't run large or inappropriate queries on your server.
 
@@ -53,9 +44,9 @@ MySchema.execute(
 )
 ```
 
-### Archiving and Deleting Data
+## Archiving and Deleting Data
 
-Clients can only _add_ to the database, but as an administrator, you can also archive or delete entries from the database. (Make sure you {% internal_link "authorize access to the Dashboard","/pro/dashboard" %}.) This is a dangerous operation: by archiving or deleting something, any clients who depend on that data will crash.
+Clients can only _add_ to the database, but as an administrator, you can also archive or delete entries from the database. (Make sure you [authorize access to the Dashboard](/pro/dashboard).) This is a dangerous operation: by archiving or deleting something, any clients who depend on that data will crash.
 
 Some reasons to archive or delete from the database are:
 
@@ -66,7 +57,7 @@ If this is true, you can use "Archive" or "Delete" buttons to remove things from
 
 When an operation is archived, it's no longer available to clients, but it's still in the database. It can be unarchived later, so this is lower-risk than full deletion.
 
-### Integration with Your Application
+## Integration with Your Application
 
 It's on the road map to add a Ruby API to `OperationStore` so that you can integrate it with your application. For example, you might:
 
@@ -74,4 +65,4 @@ It's on the road map to add a Ruby API to `OperationStore` so that you can integ
 - Show client secrets via the Dashboard so that users can save them
 - Render your own administration dashboards with `OperationStore` data
 
-If this interests you, please {% open_an_issue "OperationStore Ruby API" %} or email `support@graphql.pro`.
+If this interests you, please [open an issue](https://github.com/rmosolgo/graphql-ruby/issues/new?title=OperationStore+Ruby+API&body=) or email `support@graphql.pro`.

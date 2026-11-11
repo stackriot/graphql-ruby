@@ -5,8 +5,35 @@ module ValidatorHelpers
     child_class.extend(ClassMethods)
   end
 
+  class BlankString < String
+    def blank?
+      true
+    end
+  end
+
+  class NonBlankString < String
+    if method_defined?(:blank?)
+      undef :blank?
+    end
+  end
+
   def build_schema(arg_type, validates_config)
     schema = Class.new(GraphQL::Schema)
+
+    base_argument = Class.new(GraphQL::Schema::Argument) do
+      def initialize(*args, secret: false, **kwargs, &block)
+        super(*args, **kwargs, &block)
+        @secret = secret
+      end
+
+      def visible?(_ctx)
+        !@secret
+      end
+    end
+
+    base_field = Class.new(GraphQL::Schema::Field) do
+      argument_class(base_argument)
+    end
 
     validated_input = Class.new(GraphQL::Schema::InputObject) do
       graphql_name "ValidatedInput"
@@ -14,9 +41,14 @@ module ValidatorHelpers
       argument :b, arg_type, required: false
       argument :c, arg_type, required: false
       validates(validates_config)
+
+      def prepare
+        self
+      end
     end
 
     validated_resolver = Class.new(GraphQL::Schema::Resolver) do
+      graphql_name "ValidatedResolver"
       argument :a, arg_type, required: false
       argument :b, arg_type, required: false
       argument :c, arg_type, required: false
@@ -27,28 +59,40 @@ module ValidatorHelpers
       end
     end
 
+    validated_arg_resolver = Class.new(GraphQL::Schema::Resolver) do
+      graphql_name "ValidatedArgResolver"
+      argument :input, arg_type, required: false, validates: validates_config
+      type(String, null: false)
+      def resolve(input: :NO_INPUT)
+        input.to_s.upcase
+      end
+    end
+
     query_type = Class.new(GraphQL::Schema::Object) do
       graphql_name "Query"
-      field :validated, arg_type, null: true do
+      field_class(base_field)
+      field :validated, arg_type, resolve_legacy_instance_method: true do
         argument :value, arg_type, required: false, validates: validates_config
       end
 
-      def validated(value:)
+      def validated(value: nil)
         value
       end
 
-      field :multi_validated, arg_type, null: true, validates: validates_config do
+      field :multi_validated, arg_type, validates: validates_config, resolve_legacy_instance_method: true do
         argument :a, arg_type, required: false
         argument :b, arg_type, required: false
         argument :c, arg_type, required: false
+        argument :secret, arg_type, required: false, secret: true
+        argument :secret2, arg_type, required: false, secret: true
       end
 
       def multi_validated(a: 0, b: 0, c: 0)
         a + b + c
       end
 
-      field :validated_input, arg_type, null: true do
-        argument :input, validated_input, required: true
+      field :validated_input, arg_type, resolve_legacy_instance_method: true do
+        argument :input, validated_input
       end
 
       def validated_input(input:)
@@ -56,8 +100,8 @@ module ValidatorHelpers
       end
 
       field :validated_resolver, resolver: validated_resolver
-
-      field :list, [self], null: false
+      field :validated_arg_resolver, resolver: validated_arg_resolver
+      field :list, [self], null: false, resolve_legacy_instance_method: true
 
       def list
         [:a, :b, :c]
@@ -65,7 +109,17 @@ module ValidatorHelpers
     end
 
     schema.query(query_type)
-    schema
+    if ADD_WARDEN
+      schema.use(GraphQL::Schema::Warden)
+    else
+      schema.use(GraphQL::Schema::Visibility)
+    end
+
+    @current_schema = schema
+  end
+
+  def exec_query(...)
+    @current_schema.execute(...)
   end
 
   module ClassMethods
@@ -75,7 +129,7 @@ module ValidatorHelpers
         it "#{name}#{validator_name} on #{field_type} works with #{expectation[:config]}" do
           schema = build_schema(field_type, { validator_name => expectation[:config] })
           expectation[:cases].each do |test_case|
-            result = schema.execute(test_case[:query])
+            result = schema.execute(test_case[:query], variables: test_case[:variables])
             if !result["data"]
               pp result
               refute result["errors"].map { |e| e["message"] }, test_case[:query]
@@ -94,4 +148,3 @@ module ValidatorHelpers
     end
   end
 end
-

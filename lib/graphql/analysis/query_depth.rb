@@ -1,42 +1,63 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   module Analysis
     # A query reducer for measuring the depth of a given query.
     #
-    # @example Logging the depth of a query
-    #   Schema.query_analyzers << GraphQL::Analysis::QueryDepth.new { |query, depth|  puts "GraphQL query depth: #{depth}" }
-    #   Schema.execute(query_str)
-    #   # GraphQL query depth: 8
+    # See https://graphql-ruby.org/queries/ast_analysis.html for more examples.
     #
-    class QueryDepth
-      def initialize(&block)
-        @depth_handler = block
+    # **Examples**
+    #
+    # **Example: Logging the depth of a query**
+    #
+    # ```ruby
+    # class LogQueryDepth < GraphQL::Analysis::QueryDepth
+    #   def result
+    #     log("GraphQL query depth: #{@max_depth}")
+    #   end
+    # end
+    #
+    # # In your Schema file:
+    #
+    # class MySchema < GraphQL::Schema
+    #   query_analyzer LogQueryDepth
+    # end
+    #
+    # # When you run the query, the depth will get logged:
+    #
+    # Schema.execute(query_str)
+    # # GraphQL query depth: 8
+    # ```
+    class QueryDepth < Analyzer
+      def initialize(query)
+        @max_depth = 0 #: Integer
+        @current_depth = 0
+        @count_introspection_fields = query.schema.count_introspection_fields
+        super
       end
 
-      def initial_value(query)
-        {
-          max_depth: 0,
-          current_depth: 0,
-          query: query,
-        }
+      def on_enter_field(node, parent, visitor)
+        return if visitor.skipping? ||
+          visitor.visiting_fragment_definition? ||
+            (@count_introspection_fields == false && visitor.field_definition.introspection?)
+
+        @current_depth += 1
       end
 
-      def call(memo, visit_type, irep_node)
-        if irep_node.ast_node.is_a?(GraphQL::Language::Nodes::Field)
-          if visit_type == :enter
-            memo[:current_depth] += 1
-          else
-            if memo[:max_depth] < memo[:current_depth]
-              memo[:max_depth] = memo[:current_depth]
-            end
-            memo[:current_depth] -= 1
-          end
+      def on_leave_field(node, parent, visitor)
+        return if visitor.skipping? ||
+          visitor.visiting_fragment_definition? ||
+          (@count_introspection_fields == false && visitor.field_definition.introspection?)
+
+        if @max_depth < @current_depth
+          @max_depth = @current_depth
         end
-        memo
+        @current_depth -= 1
       end
 
-      def final_value(memo)
-        @depth_handler.call(memo[:query], memo[:max_depth])
+      def result
+        @max_depth
       end
     end
   end

@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: ignore
 module Graphql
   module Generators
     module Relay
@@ -6,7 +8,24 @@ module Graphql
         # Add Node, `node(id:)`, and `nodes(ids:)`
         template("node_type.erb", "#{options[:directory]}/types/node_type.rb")
         in_root do
-          fields = "    # Add `node(id: ID!) and `nodes(ids: [ID!]!)`\n    include GraphQL::Types::Relay::HasNodeField\n    include GraphQL::Types::Relay::HasNodesField\n\n"
+          fields = <<-RUBY
+    field :node, Types::NodeType, null: true, description: "Fetches an object given its ID." do
+      argument :id, ID, required: true, description: "ID of the object."
+    end
+
+    def node(id:)
+      context.schema.object_from_id(id, context)
+    end
+
+    field :nodes, [Types::NodeType, null: true], null: true, description: "Fetches a list of objects given a list of IDs." do
+      argument :ids, [ID], required: true, description: "IDs of the objects."
+    end
+
+    def nodes(ids:)
+      ids.map { |id| context.schema.object_from_id(id, context) }
+    end
+
+    RUBY
           inject_into_file "#{options[:directory]}/types/query_type.rb", fields, after: /class .*QueryType\s*<\s*[^\s]+?\n/m, force: false
         end
 
@@ -32,20 +51,14 @@ module Graphql
 
   # Return a string UUID for `object`
   def self.id_from_object(object, type_definition, query_ctx)
-    # Here's a simple implementation which:
-    # - joins the type name & object.id
-    # - encodes it with base64:
-    # GraphQL::Schema::UniqueWithinType.encode(type_definition.name, object.id)
+    # For example, use Rails' GlobalID library (https://github.com/rails/globalid):
+    object.to_gid_param
   end
 
   # Given a string UUID, find the object
-  def self.object_from_id(id, query_ctx)
-    # For example, to decode the UUIDs generated above:
-    # type_name, item_id = GraphQL::Schema::UniqueWithinType.decode(id)
-    #
-    # Then, based on `type_name` and `id`
-    # find an object in your application
-    # ...
+  def self.object_from_id(global_id, query_ctx)
+    # For example, use Rails' GlobalID library (https://github.com/rails/globalid):
+    GlobalID.find(global_id)
   end
 RUBY
         inject_into_file schema_file_path, schema_code, before: /^end\n/m, force: false

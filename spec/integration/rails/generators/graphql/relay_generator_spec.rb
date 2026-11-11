@@ -1,20 +1,17 @@
 # frozen_string_literal: true
 require "spec_helper"
 require "generators/graphql/relay_generator"
+require "generators/graphql/install_generator"
 
 class GraphQLGeneratorsRelayGeneratorTest < Rails::Generators::TestCase
   tests Graphql::Generators::RelayGenerator
-  destination File.expand_path("../../../tmp/dummy", File.dirname(__FILE__))
+  destination File.join(GENERATOR_TMP_DIR, "dummy")
 
   setup do
     prepare_destination
-
     FileUtils.cd(File.join(destination_root, '..')) do
-      `rails new dummy --skip-active-record --skip-test-unit --skip-spring --skip-bundle --skip-webpack-install`
-
-      FileUtils.cd("dummy") do
-        `rails generate graphql:install`
-      end
+      `rails new dummy --skip-active-record --skip-test-unit --skip-spring --skip-bundle --skip-webpack-install --skip-bootsnap`
+      Graphql::Generators::InstallGenerator.start(["--skip-graphiql"], { destination_root: destination_root })
     end
   end
 
@@ -52,8 +49,8 @@ class GraphQLGeneratorsRelayGeneratorTest < Rails::Generators::TestCase
     end
 
     assert_file "app/graphql/types/query_type.rb" do |content|
-      assert_includes content, "include GraphQL::Types::Relay::HasNodeField"
-      assert_includes content, "include GraphQL::Types::Relay::HasNodesField"
+      assert_includes content, "field :node, Types::NodeType"
+      assert_includes content, "field :nodes, [Types::NodeType, null: true]"
     end
 
     assert_file "app/graphql/dummy_schema.rb" do |content|

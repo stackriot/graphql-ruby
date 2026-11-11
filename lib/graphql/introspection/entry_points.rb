@@ -1,34 +1,37 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   module Introspection
     class EntryPoints < Introspection::BaseObject
-      field :__schema, GraphQL::Schema::LateBoundType.new("__Schema"), "This GraphQL schema", null: false
-      field :__type, GraphQL::Schema::LateBoundType.new("__Type"), "A type in the GraphQL system", null: true do
-        argument :name, String, required: true
+      field :__schema, GraphQL::Schema::LateBoundType.new("__Schema"), "This GraphQL schema", null: false, dynamic_introspection: true, resolve_static: true
+      field :__type, GraphQL::Schema::LateBoundType.new("__Type"), "A type in the GraphQL system", dynamic_introspection: true, resolve_static: true do
+        argument :name, String
+      end
+
+      def self.__schema(context)
+        # Apply wrapping manually since this field isn't wrapped by instrumentation
+        schema = context.schema
+        schema_type = schema.introspection_system.types["__Schema"]
+        schema_type.wrap(schema, context)
       end
 
       def __schema
-        # Apply wrapping manually since this field isn't wrapped by instrumentation
-        schema = @context.query.schema
-        schema_type = schema.introspection_system.types["__Schema"]
-        schema_type.type_class.authorized_new(schema, @context)
+        self.class.__schema(context)
       end
 
       def __type(name:)
-        return unless context.warden.reachable_type?(name)
-        type = context.warden.get_type(name)
+        self.class.__type(context, name: name)
+      end
 
-        if type && context.interpreter? && !type.is_a?(Module)
-          type = type.type_class || raise("Invariant: interpreter requires class-based type for #{name}")
+      def self.__type(context, name:)
+        if context.types.reachable_type?(name) && (type = context.types.type(name))
+          type
+        elsif (type = context.schema.extra_types.find { |t| t.graphql_name == name })
+          type
+        else
+          nil
         end
-
-        # The interpreter provides this wrapping, other execution doesnt, so support both.
-        if type && !context.interpreter?
-          # Apply wrapping manually since this field isn't wrapped by instrumentation
-          type_type = context.schema.introspection_system.types["__Type"]
-          type = type_type.type_class.authorized_new(type, context)
-        end
-        type
       end
     end
   end

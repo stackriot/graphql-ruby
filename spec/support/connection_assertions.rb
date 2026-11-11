@@ -6,6 +6,7 @@
 # The test must implement `schema` to serve the queries below with the expected results.
 module ConnectionAssertions
   MAX_PAGE_SIZE = 6
+  DEFAULT_PAGE_SIZE = 4
   NAMES = [
     "Avocado",
     "Beet",
@@ -39,6 +40,7 @@ module ConnectionAssertions
 
     Class.new(base_schema) do
       default_max_page_size ConnectionAssertions::MAX_PAGE_SIZE
+      default_page_size ConnectionAssertions::DEFAULT_PAGE_SIZE
       cursor_encoder(NonceEnabledEncoder)
 
       # Make a way to get local variables (passed in as args)
@@ -51,27 +53,26 @@ module ConnectionAssertions
       self.connection_class = connection_class
       self.total_count_connection_class = total_count_connection_class
 
-      item = Class.new(GraphQL::Schema::Object) do
+      base_object = GraphQL::Schema::Object
+      item = Class.new(base_object) do
         graphql_name "Item"
-        field :name, String, null: false
+        field :name, String, null: false, hash_key: :name
       end
 
       custom_item_edge = Class.new(GraphQL::Types::Relay::BaseEdge) do
         node_type item
         graphql_name "CustomItemEdge"
-
         field :parent_class, String, null: false
-
-        def parent_class
-          object.parent.class.inspect
-        end
-
         field :node_class_name, String, null: false
       end
 
       custom_edge_class = Class.new(GraphQL::Pagination::Connection::Edge) do
         def node_class_name
           node.class.name
+        end
+
+        def parent_class
+          parent.class.inspect
         end
       end
 
@@ -92,45 +93,99 @@ module ConnectionAssertions
         edge_type custom_item_edge
       end
 
-      query = Class.new(GraphQL::Schema::Object) do
+      query = Class.new(base_object) do
         graphql_name "Query"
-        field :items, item.connection_type, null: false do
+        field :items, item.connection_type, null: false, resolve_static: true do
           argument :max_page_size_override, Integer, required: false
+          argument :default_page_size_override, Integer, required: false
         end
 
-        def items(max_page_size_override: :no_value)
-          if max_page_size_override != :no_value
-            context.schema.connection_class.new(get_items, max_page_size: max_page_size_override)
-          else
+        def items(**kwargs)
+          self.class.items(context, **kwargs)
+        end
+
+        def self.items(context, max_page_size_override: :no_value, default_page_size_override: :no_value)
+          if max_page_size_override == :no_value && default_page_size_override == :no_value
             # don't manually apply the wrapper when it's not required -- check automatic wrapping.
-            get_items
+            get_items(context)
+          else
+            args = {}
+            args[:max_page_size] = max_page_size_override if max_page_size_override != :no_value
+            args[:default_page_size] = default_page_size_override if default_page_size_override != :no_value
+            context.schema.connection_class.new(get_items(context), **args)
           end
         end
 
-        field :custom_items, custom_item_connection, null: false
+        field :custom_items, custom_item_connection, null: false, resolve_static: true
 
         def custom_items
-          context.schema.total_count_connection_class.new(get_items)
+          self.class.custom_items(context)
+        end
+
+        def self.custom_items(context)
+          context.schema.total_count_connection_class.new(get_items(context))
         end
 
         if connection_class
-          field :custom_items_with_custom_edge, custom_items_with_custom_edge, null: false
+          field :custom_items_with_custom_edge, custom_items_with_custom_edge, null: false, resolve_static: true
 
           def custom_items_with_custom_edge
-            context.schema.custom_connection_class_with_custom_edge.new(get_items)
+            self.class.custom_items_with_custom_edge(context)
+          end
+
+          def self.custom_items_with_custom_edge(context)
+            context.schema.custom_connection_class_with_custom_edge.new(get_items(context))
           end
         end
 
-        field :limited_items, item.connection_type, null: false, max_page_size: 2
+        field :limited_items, item.connection_type, null: false, max_page_size: 2, resolve_static: true
 
         def limited_items
-          get_items
+          self.class.limited_items(context)
         end
 
-        private
+        def self.limited_items(context)
+          get_items(context)
+        end
 
-        def get_items
-          context.schema.get_items.call
+        field :preloaded_items, item.connection_type, resolve_static: true
+
+        def preloaded_items
+          self.class.preloaded_items(context)
+        end
+
+        def self.preloaded_items(context)
+          relation = get_items(context)
+          relation.load # force the unbounded relation to load from the database
+          relation
+        end
+
+        field :unbounded_items, item.connection_type, max_page_size: nil, default_page_size: nil, resolve_static: true
+
+        def unbounded_items
+          self.class.unbounded_items(context)
+        end
+
+        def self.unbounded_items(context)
+          get_items(context)
+        end
+
+        field :offset_items, item.connection_type, resolve_static: true
+
+        def offset_items
+          self.class.offset_items(context)
+        end
+
+        def self.offset_items(context)
+          get_items(context).offset(2)
+        end
+
+        class << self
+          private
+
+          def get_items(context)
+            context.schema.get_items.call
+          end
         end
       end
 
@@ -140,8 +195,8 @@ module ConnectionAssertions
 
   def self.included(child_module)
     child_module.class_exec do
-      def exec_query(query_str, variables)
-        schema.execute(query_str, variables: variables)
+      def exec_query(query_str, root_value: nil, **variables)
+        schema.execute(query_str, root_value: root_value, variables: variables)
       end
 
       def get_page_info(result, page_info_field)
@@ -217,15 +272,38 @@ module ConnectionAssertions
           refute get_page_info(res3, "hasPreviousPage")
         end
 
+        it "returns empty lists for `after: 1` and `before: 2`" do
+          res = exec_query(query_str, first: 2)
+          assert_names(["Avocado", "Beet"], res)
+          after_cursor = get_page_info(res, "startCursor")
+          before_cursor = get_page_info(res, "endCursor")
+
+          res = exec_query(query_str, after: after_cursor, before: before_cursor)
+          assert_equal true, get_page_info(res, "hasNextPage")
+          assert_equal true, get_page_info(res, "hasPreviousPage")
+          assert_names [], res
+
+          res = exec_query(query_str, after: after_cursor, before: before_cursor, first: 3)
+          assert_equal true, get_page_info(res, "hasNextPage")
+          assert_equal true, get_page_info(res, "hasPreviousPage")
+          assert_names [], res
+        end
+
         it "handles out-of-bounds cursors" do
-          # It treats negative cursors like zero
+          # Negative cursors don't wrap around to the end
           bogus_negative_cursor = NonceEnabledEncoder.encode("-10")
           res = exec_query(query_str, first: 3, after: bogus_negative_cursor)
-          assert_names(["Avocado", "Beet", "Cucumber"], res)
+          assert_nil res.dig("data", "items", "nodes")
+          assert_includes res["errors"].first["message"], "Invalid cursor"
 
           # It returns nothing for cursors beyond the array
           bogus_huge_cursor = NonceEnabledEncoder.encode("100")
           res = exec_query(query_str, first: 3, after: bogus_huge_cursor)
+          assert_names([], res)
+
+          # It returns nothing before the first cursor
+          first_cursor = NonceEnabledEncoder.encode("1")
+          res = exec_query(query_str, first: 3, before: first_cursor)
           assert_names([], res)
         end
 
@@ -252,12 +330,6 @@ module ConnectionAssertions
         end
 
         it "applies max_page_size to first and last" do
-          res = exec_query(query_str, {})
-          # Even though neither first nor last was provided, max_page_size was applied.
-          assert_names(["Avocado", "Beet", "Cucumber", "Dill", "Eggplant", "Fennel"], res)
-          assert_equal true, get_page_info(res, "hasNextPage")
-          assert_equal false, get_page_info(res, "hasPreviousPage")
-
           # max_page_size overrides first
           res = exec_query(query_str, first: 10)
           assert_names(["Avocado", "Beet", "Cucumber", "Dill", "Eggplant", "Fennel"], res)
@@ -270,11 +342,61 @@ module ConnectionAssertions
           assert_equal false, get_page_info(res, "hasNextPage")
           assert_equal true, get_page_info(res, "hasPreviousPage")
         end
+
+        it "rejects malformed before cursors without bypassing max_page_size" do
+          query = <<~GRAPHQL
+            query($before: String!) {
+              limitedItems(last: 3, before: $before) { nodes { name } }
+            }
+          GRAPHQL
+
+          ["-1", "0", "abc", "1e10"].each do |cursor|
+            encoded_cursor = NonceEnabledEncoder.encode(cursor)
+            result = schema.execute(query, variables: { "before" => encoded_cursor })
+            assert_nil result.dig("data", "limitedItems", "nodes")
+            assert_includes result["errors"].first["message"], "Invalid cursor"
+          end
+        end
+
+        it "applies default_page_size to first when first and last are unspecified" do
+          res = exec_query(query_str)
+          # Neither first nor last was provided, so default_page_size was applied.
+          assert_names(["Avocado", "Beet", "Cucumber", "Dill"], res)
+          assert_equal true, get_page_info(res, "hasNextPage")
+          assert_equal false, get_page_info(res, "hasPreviousPage")
+        end
+
+        it "returns unbounded lists" do
+          query_str = <<-GRAPHQL
+            query($first: Int, $after: String, $last: Int, $before: String) {
+              unboundedItems(first: $first, after: $after, last: $last, before: $before) {
+                nodes {
+                  name
+                }
+                edges {
+                  node {
+                    name
+                  }
+                  cursor
+                }
+                pageInfo {
+                  hasNextPage
+                  hasPreviousPage
+                  startCursor
+                  endCursor
+                }
+              }
+            }
+          GRAPHQL
+
+          res = exec_query(query_str)
+          assert_equal 10, res["data"]["unboundedItems"]["nodes"].size
+        end
       end
 
       describe "customizing" do
         it "serves custom fields" do
-          res = schema.execute <<-GRAPHQL, root_value: :something
+          res = exec_query <<-GRAPHQL, root_value: :something
           {
             items: customItems(first: 3) {
               nodes {
@@ -305,7 +427,7 @@ module ConnectionAssertions
 
         it "uses custom ::Edge classes" do
           skip "Not supported" if schema.connection_class.nil?
-          res = schema.execute <<-GRAPHQL, root_value: :something
+          res = exec_query <<-GRAPHQL, root_value: :something
           {
             items: customItemsWithCustomEdge(first: 3) {
               nodes {
@@ -329,7 +451,7 @@ module ConnectionAssertions
 
         it "applies local max-page-size settings" do
           # Smaller default:
-          res = schema.execute <<-GRAPHQL
+          res = exec_query <<-GRAPHQL
           {
             items(first: 10, maxPageSizeOverride: 3) {
               nodes {
@@ -347,7 +469,7 @@ module ConnectionAssertions
           assert_names(["Avocado", "Beet", "Cucumber"], res)
 
           # Larger than the default:
-          res = schema.execute <<-GRAPHQL
+          res = exec_query <<-GRAPHQL
           {
             items(first: 10, maxPageSizeOverride: 7) {
               nodes {
@@ -365,7 +487,7 @@ module ConnectionAssertions
           assert_names(["Avocado", "Beet", "Cucumber", "Dill", "Eggplant", "Fennel", "Ginger"], res)
 
           # Unlimited
-          res = schema.execute <<-GRAPHQL
+          res = exec_query <<-GRAPHQL
           {
             items(first: 100, maxPageSizeOverride: null) {
               nodes {
@@ -383,7 +505,7 @@ module ConnectionAssertions
         end
 
         it "applies a field-level max-page-size configuration" do
-          res = schema.execute <<-GRAPHQL
+          res = exec_query <<-GRAPHQL
           {
             items: limitedItems(first: 10) {
               nodes {

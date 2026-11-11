@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   module Execution
@@ -7,55 +9,55 @@ module GraphQL
         def initialize(query)
           @query = query
           @dataloader = query.context.dataloader
-          @storage = Hash.new do |h, ast_node|
-            h[ast_node] = Hash.new do |h2, arg_owner|
-              h2[arg_owner] = Hash.new do |h3, parent_object|
-                dataload_for(ast_node, arg_owner, parent_object) do |kwarg_arguments|
-                  h3[parent_object] = @query.schema.after_lazy(kwarg_arguments) do |resolved_args|
-                    h3[parent_object] = resolved_args
-                  end
-                end
+          @storage = Hash.new do |h, argument_owner|
+            h[argument_owner] = if argument_owner.arguments_statically_coercible?
+              shared_values_cache = {}
+              Hash.new do |h2, ignored_parent_object|
+                h2[ignored_parent_object] = shared_values_cache
+              end.compare_by_identity
+            else
+              Hash.new do |h2, parent_object|
+                h2[parent_object] = {}.compare_by_identity
+              end.compare_by_identity
+            end
+          end.compare_by_identity
+        end
 
-                if !h3.key?(parent_object)
-                  # TODO should i bother putting anything here?
-                  h3[parent_object] = NO_ARGUMENTS
-                else
-                  h3[parent_object]
-                end
-              end
+        def fetch(ast_node, argument_owner, parent_object)
+          # This runs eagerly if no block is given
+          @storage[argument_owner][parent_object][ast_node] ||= begin
+            args_hash = self.class.prepare_args_hash(@query, ast_node)
+            kwarg_arguments = argument_owner.coerce_arguments(parent_object, args_hash, @query.context)
+            @query.after_lazy(kwarg_arguments) do |resolved_args|
+              @storage[argument_owner][parent_object][ast_node] = resolved_args
             end
           end
         end
 
-        def fetch(ast_node, argument_owner, parent_object)
-          # If any jobs were enqueued, run them now,
-          # since this might have been called outside of execution.
-          # (The jobs are responsible for updating `result` in-place.)
-          @dataloader.run_isolated do
-            @storage[ast_node][argument_owner][parent_object]
-          end
-          # Ack, the _hash_ is updated, but the key is eventually
-          # overridden with an immutable arguments instance.
-          # The first call queues up the job,
-          # then this call fetches the result.
-          # TODO this should be better, find a solution
-          # that works with merging the runtime.rb code
-          @storage[ast_node][argument_owner][parent_object]
+        def cached_arguments_for(ast_node, argument_owner)
+          @storage[argument_owner][nil][ast_node]
         end
 
-        # @yield [Interpreter::Arguments, Lazy<Interpreter::Arguments>] The finally-loaded arguments
+        # **Yields:** [Interpreter::Arguments, Lazy<Interpreter::Arguments>] The finally-loaded arguments
         def dataload_for(ast_node, argument_owner, parent_object, &block)
           # First, normalize all AST or Ruby values to a plain Ruby hash
-          args_hash = self.class.prepare_args_hash(@query, ast_node)
-          argument_owner.coerce_arguments(parent_object, args_hash, @query.context, &block)
+          arg_storage = @storage[argument_owner][parent_object]
+          if (args = arg_storage[ast_node])
+            yield(args)
+          else
+            args_hash = self.class.prepare_args_hash(@query, ast_node)
+            argument_owner.coerce_arguments(parent_object, args_hash, @query.context) do |resolved_args|
+              arg_storage[ast_node] = resolved_args
+              yield(resolved_args)
+            end
+          end
           nil
         end
 
         private
 
-        NO_ARGUMENTS = {}.freeze
-
-        NO_VALUE_GIVEN = Object.new
+        NO_ARGUMENTS = GraphQL::EmptyObjects::EMPTY_HASH
+        NO_VALUE_GIVEN = NOT_CONFIGURED
 
         def self.prepare_args_hash(query, ast_arg_or_hash_or_value)
           case ast_arg_or_hash_or_value
@@ -71,11 +73,11 @@ module GraphQL
           when Array
             ast_arg_or_hash_or_value.map { |v| prepare_args_hash(query, v) }
           when GraphQL::Language::Nodes::Field, GraphQL::Language::Nodes::InputObject, GraphQL::Language::Nodes::Directive
-            if ast_arg_or_hash_or_value.arguments.empty?
+            if ast_arg_or_hash_or_value.arguments.empty? # rubocop:disable Development/ContextIsPassedCop -- AST-related
               return NO_ARGUMENTS
             end
             args_hash = {}
-            ast_arg_or_hash_or_value.arguments.each do |arg|
+            ast_arg_or_hash_or_value.arguments.each do |arg| # rubocop:disable Development/ContextIsPassedCop -- AST-related
               v = prepare_args_hash(query, arg.value)
               if v != NO_VALUE_GIVEN
                 args_hash[arg.name] = v

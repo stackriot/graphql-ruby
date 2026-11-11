@@ -4,10 +4,15 @@ require "spec_helper"
 describe GraphQL::Schema::Member::Scoped do
   class ScopeSchema < GraphQL::Schema
     class BaseObject < GraphQL::Schema::Object
+      class BaseField < GraphQL::Schema::Field
+      end
+      field_class BaseField
     end
 
     class Item < BaseObject
       def self.scope_items(items, context)
+        context[:scope_calls] ||= 0
+        context[:scope_calls] += 1
         if context[:french]
           items.select { |i| i.name == "Trombone" }
         elsif context[:english]
@@ -25,7 +30,26 @@ describe GraphQL::Schema::Member::Scoped do
         end
       end
 
+      def self.authorized?(obj, ctx)
+        if ctx[:allow_unscoped]
+          true
+        else
+          raise "This should never be called (#{ctx[:current_path]}, #{ctx[:current_field]&.path})"
+        end
+      end
+
+      reauthorize_scoped_objects(false)
+
       field :name, String, null: false
+    end
+
+    class ReauthorizeItem < Item
+      reauthorize_scoped_objects(true)
+
+      def self.authorized?(_obj, context)
+        context[:was_authorized] = true
+        true
+      end
     end
 
     class FrenchItem < Item
@@ -56,24 +80,26 @@ describe GraphQL::Schema::Member::Scoped do
           Item
         end
       end
+
+      reauthorize_scoped_objects(false)
     end
 
     class Query < BaseObject
-      field :items, [Item], null: false
+      field :items, [Item], null: false, resolve_legacy_instance_method: true
       field :unscoped_items, [Item], null: false,
         scope: false,
-        resolver_method: :items
+        resolver_method: :items, resolve_legacy_instance_method: :items
 
-      field :nil_items, [Item], null: true
+      field :nil_items, [Item], resolve_legacy_instance_method: true
       def nil_items
         nil
       end
 
       field :french_items, [FrenchItem], null: false,
-        resolver_method: :items
+        resolver_method: :items, resolve_legacy_instance_method: :items
 
       field :items_connection, Item.connection_type, null: false,
-          resolver_method: :items
+          resolver_method: :items, resolve_legacy_instance_method: :items
 
       def items
         [
@@ -82,13 +108,15 @@ describe GraphQL::Schema::Member::Scoped do
         ]
       end
 
-      field :things, [Thing], null: false
+      field :reauthorize_items, [ReauthorizeItem], resolver_method: :items, resolve_legacy_instance_method: :items
+
+      field :things, [Thing], null: false, resolve_legacy_instance_method: true
       def things
         items + [OpenStruct.new(name: "Turbine")]
       end
 
-      field :lazy_items, [Item], null: false
-      field :lazy_items_connection, Item.connection_type, null: false, resolver_method: :lazy_items
+      field :lazy_items, [Item], null: false, resolve_legacy_instance_method: true
+      field :lazy_items_connection, Item.connection_type, null: false, resolver_method: :lazy_items, resolve_legacy_instance_method: :lazy_items
       def lazy_items
         ->() { items }
       end
@@ -96,6 +124,10 @@ describe GraphQL::Schema::Member::Scoped do
 
     query(Query)
     lazy_resolve(Proc, :call)
+  end
+
+  def exec_query(...)
+    ScopeSchema.execute(...)
   end
 
   describe ".scope_items(items, ctx)" do
@@ -107,7 +139,7 @@ describe GraphQL::Schema::Member::Scoped do
         }
       }
       "
-      res = ScopeSchema.execute(query_str, context: ctx)
+      res = exec_query(query_str, context: ctx)
       res["data"][field_name].map { |i| i["name"] }
     end
 
@@ -118,7 +150,7 @@ describe GraphQL::Schema::Member::Scoped do
     end
 
     it "is bypassed when scope: false" do
-      assert_equal ["Trombone", "Paperclip"], get_item_names_with_context({}, field_name: "unscopedItems")
+      assert_equal ["Trombone", "Paperclip"], get_item_names_with_context({ allow_unscoped: true }, field_name: "unscopedItems")
     end
 
     it "returns null when the value is nil" do
@@ -129,7 +161,7 @@ describe GraphQL::Schema::Member::Scoped do
         }
       }
       "
-      res = ScopeSchema.execute(query_str)
+      res = exec_query(query_str)
       refute res.key?("errors")
       assert_nil res.fetch("data").fetch("nilItems")
     end
@@ -138,7 +170,7 @@ describe GraphQL::Schema::Member::Scoped do
       assert_equal ["Trombone"], get_item_names_with_context({}, field_name: "frenchItems")
     end
 
-    it "is called for connection fields" do
+    it "is called once for connection fields" do
       query_str = "
       {
         itemsConnection {
@@ -150,9 +182,10 @@ describe GraphQL::Schema::Member::Scoped do
         }
       }
       "
-      res = ScopeSchema.execute(query_str, context: {english: true})
+      res = exec_query(query_str, context: {english: true})
       names = res["data"]["itemsConnection"]["edges"].map { |e| e["node"]["name"] }
       assert_equal ["Paperclip"], names
+      assert_equal 1, res.context[:scope_calls]
 
       query_str = "
       {
@@ -163,9 +196,10 @@ describe GraphQL::Schema::Member::Scoped do
         }
       }
       "
-      res = ScopeSchema.execute(query_str, context: {english: true})
+      res = exec_query(query_str, context: {english: true})
       names = res["data"]["itemsConnection"]["nodes"].map { |e| e["name"] }
       assert_equal ["Paperclip"], names
+      assert_equal 1, res.context[:scope_calls]
     end
 
     it "works for lazy connection values" do
@@ -181,7 +215,7 @@ describe GraphQL::Schema::Member::Scoped do
         }
       }
       "
-      res = ScopeSchema.execute(query_str, context: ctx)
+      res = exec_query(query_str, context: ctx)
       names = res["data"]["itemsConnection"]["edges"].map { |e| e["node"]["name"] }
       assert_equal ["Trombone", "Paperclip"], names
       assert_equal true, ctx[:proc_called]
@@ -202,11 +236,19 @@ describe GraphQL::Schema::Member::Scoped do
         }
       }
       "
-      res = ScopeSchema.execute(query_str, context: { french: true })
+      res = exec_query(query_str, context: { french: true })
       names = res["data"]["lazyItemsConnection"]["edges"].map { |e| e["node"]["name"] }
       assert_equal ["Trombone"], names
       names2 = res["data"]["lazyItems"].map { |e| e["name"] }
       assert_equal ["Trombone"], names2
+    end
+
+    it "doesn't shortcut authorization when `reauthorize_scoped_objects(true)`" do
+      query_str = "{ reauthorizeItems { name } }"
+      res = exec_query(query_str, context: { french: true })
+      assert_equal 1, res["data"]["reauthorizeItems"].length
+      assert_equal 1, res.context[:scope_calls]
+      assert res.context[:was_authorized]
     end
 
     it "is called for abstract types" do
@@ -222,7 +264,7 @@ describe GraphQL::Schema::Member::Scoped do
         }
       }
       "
-      res = ScopeSchema.execute(query_str, context: {first_letter: "T"})
+      res = exec_query(query_str, context: {first_letter: "T"})
       things = res["data"]["things"]
       assert_equal [{ "name" => "Trombone" }, {"designation" => "Turbine"}], things
     end
@@ -251,6 +293,209 @@ describe GraphQL::Schema::Member::Scoped do
 
     it "defaults to false for others" do
       assert_equal false, ScopeSchema::Item.fields["name"].scoped?
+    end
+  end
+
+  describe "ScopeExtension#after_resolve" do
+    it "works outside of GraphQL execution" do
+      ctx = GraphQL::Query.new(ScopeSchema, "{ __typename }").context
+      field = ScopeSchema::Query.fields["items"]
+      assert field.resolve(OpenStruct.new(object: { items: [] }), {}, ctx)
+    end
+  end
+
+
+  describe "skipping authorization on scoped lists" do
+    class SkipAuthSchema < GraphQL::Schema
+      class Book < GraphQL::Schema::Object
+        class BaseField < GraphQL::Schema::Field
+        end
+        field_class(BaseField)
+
+        def self.authorized?(obj, ctx)
+          ctx[:auth_log] << [:authorized?, obj[:title]]
+          true
+        end
+
+        def self.scope_items(list, ctx)
+          ctx[:auth_log] << [:scope_items, list.map { |b| b[:title]}]
+          list.dup # Skipping authorized objects requires a new object to be returned
+        end
+
+        field :title, String, hash_key: :title
+      end
+
+      class SkipAuthorizationBook < Book
+        reauthorize_scoped_objects(false)
+      end
+
+      class ReauthorizedBook < Book
+        reauthorize_scoped_objects(true)
+      end
+
+      class Query < GraphQL::Schema::Object
+        field :book, Book, resolve_static: true
+
+        def book
+          self.class.book(context)
+        end
+
+        def self.book(_context)
+          { title: "Nonsense Omnibus"}
+        end
+
+        field :books, [Book], resolve_static: true
+
+        def books
+          self.class.books(context)
+        end
+
+        def self.books(_context)
+          [{ title: "Jayber Crow" }, { title: "Hannah Coulter" }]
+        end
+
+        field :skip_authorization_books, [SkipAuthorizationBook], resolver_method: :books, resolve_static: :books
+
+        field :reauthorized_books, [ReauthorizedBook], resolver_method: :books, resolve_static: :books
+
+        field :skip_authorization_books_connection, SkipAuthorizationBook.connection_type, resolver_method: :books, resolve_static: :books
+      end
+
+      query(Query)
+    end
+
+    def exec_skip_auth(...)
+      SkipAuthSchema.execute(...)
+    end
+
+    it "runs both authorizations by default" do
+      log = []
+      exec_skip_auth("{ book { title } books { title } }", context: { auth_log: log })
+      expected_log = [
+        [:authorized?, "Nonsense Omnibus"],
+        [:scope_items, ["Jayber Crow", "Hannah Coulter"]],
+        [:authorized?, "Jayber Crow"],
+        [:authorized?, "Hannah Coulter"],
+      ]
+      assert_equal expected_log, log
+    end
+
+    it "skips self.authorized? when configured" do
+      log = []
+      exec_skip_auth("{ skipAuthorizationBooks { title } }", context: { auth_log: log })
+      assert_equal [[:scope_items, ["Jayber Crow", "Hannah Coulter"]]], log
+    end
+
+    it "can be re-enabled in subclasses" do
+      log = []
+      exec_skip_auth("{ reauthorizedBooks { title } }", context: { auth_log: log })
+      expected_log = [
+        [:scope_items, ["Jayber Crow", "Hannah Coulter"]],
+        [:authorized?, "Jayber Crow"],
+        [:authorized?, "Hannah Coulter"],
+      ]
+
+      assert_equal expected_log, log
+    end
+
+    it "skips auth in connections" do
+      log = []
+      exec_skip_auth("{ skipAuthorizationBooksConnection(first: 10) { nodes { title } } }", context: { auth_log: log })
+      assert_equal [[:scope_items, ["Jayber Crow", "Hannah Coulter"]]], log
+    end
+
+    describe "custom fields on connection and edge types" do
+      class EdgeFieldAuthSchema < GraphQL::Schema
+        # Simulates an app-wide base class that opts out of reauthorization
+        class BaseObject < GraphQL::Schema::Object
+          reauthorize_scoped_objects(false)
+        end
+
+        class Reviewer < BaseObject
+          def self.authorized?(obj, ctx)
+            ctx[:auth_log] << [:authorized?, obj[:name]]
+            !obj[:secret]
+          end
+
+          field :name, String, hash_key: :name
+        end
+
+        class Book < BaseObject
+          def self.authorized?(obj, ctx)
+            ctx[:auth_log] << [:authorized?, obj[:title]]
+            true
+          end
+
+          def self.scope_items(list, ctx)
+            ctx[:auth_log] << [:scope_items, list.map { |b| b[:title] }]
+            list.dup
+          end
+
+          field :title, String, hash_key: :title
+        end
+
+        class BookEdge < GraphQL::Types::Relay::BaseEdge
+          node_type(Book)
+          # Not a node -- this should be authorized normally:
+          field :reviewer, Reviewer, resolve_each: :reviewer
+
+          def self.reviewer(edge, _context)
+            { name: "Secret Reviewer for #{edge.node[:title]}", secret: true }
+          end
+
+          def reviewer
+            self.class.reviewer(object, context)
+          end
+        end
+
+        class BookConnection < GraphQL::Types::Relay::BaseConnection
+          edge_type(BookEdge)
+          # Not a node -- this should be authorized normally:
+          field :top_reviewer, Reviewer, resolve_each: :top_reviewer
+
+          def self.top_reviewer(_conn, _context)
+            { name: "Secret Top Reviewer", secret: true }
+          end
+
+          def top_reviewer
+            self.class.top_reviewer(object, context)
+          end
+        end
+
+        class Query < GraphQL::Schema::Object
+          field :books, BookConnection, resolve_static: true
+
+          def books
+            self.class.books(context)
+          end
+
+          def self.books(_context)
+            [{ title: "Jayber Crow" }, { title: "Hannah Coulter" }]
+          end
+        end
+
+        query(Query)
+        use GraphQL::Execution::Next
+      end
+
+      [:execute, :execute_next].each do |exec_method|
+        it "authorizes non-node objects on edge types (#{exec_method})" do
+          log = []
+          res = EdgeFieldAuthSchema.public_send(exec_method, "{ books(first: 10) { edges { node { title } reviewer { name } } } }", context: { auth_log: log })
+          assert_equal [{ "node" => { "title" => "Jayber Crow" }, "reviewer" => nil }, { "node" => { "title" => "Hannah Coulter" }, "reviewer" => nil }], res["data"]["books"]["edges"]
+          assert_includes log, [:authorized?, "Secret Reviewer for Jayber Crow"]
+          assert_includes log, [:authorized?, "Secret Reviewer for Hannah Coulter"]
+          refute_includes log, [:authorized?, "Jayber Crow"], "Nodes are still skipped"
+        end
+
+        it "authorizes non-node objects on connection types (#{exec_method})" do
+          log = []
+          res = EdgeFieldAuthSchema.public_send(exec_method, "{ books(first: 10) { nodes { title } topReviewer { name } } }", context: { auth_log: log })
+          assert_nil res["data"]["books"]["topReviewer"]
+          assert_includes log, [:authorized?, "Secret Top Reviewer"]
+          refute_includes log, [:authorized?, "Jayber Crow"], "Nodes are still skipped"
+        end
+      end
     end
   end
 end

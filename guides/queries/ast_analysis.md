@@ -1,20 +1,10 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Queries
-title: Ahead-of-Time AST Analysis
-desc: Check incoming query strings and reject them if they don't pass your checks
-index: 1
-redirect_from:
-  - /queries/analysis/
----
+# Ahead-of-Time AST Analysis
 
 You can do ahead-of-time analysis for your queries.
 
-The primitive for analysis is {{ "GraphQL::Analysis::AST::Analyzer" | api_doc }}. Analyzers must inherit from this base class and implement the desired methods for analysis.
+The primitive for analysis is [GraphQL::Analysis::Analyzer](rdoc-ref:GraphQL::Analysis::Analyzer). Analyzers must inherit from this base class and implement the desired methods for analysis.
 
-### Using Analyzers
+## Using Analyzers
 
 Query analyzers are added to the schema with `query_analyzer`, for example:
 
@@ -31,20 +21,20 @@ Pass the **class** (and not an _instance_) of your analyzer. The analysis engine
 Analyzers respond to methods similar to AST visitors. They're named like `on_enter_#{ast_node}` and `on_leave_#{ast_node}`. Methods are called with three arguments:
 
 - `node`: The current AST node (being entered or left)
-- `parent`: The AST node which preceeds this one in the tree
-- `visitor`: A {{ "GraphQL::Analysis::AST::Visitor" | api_doc }} which is managing this analysis run
+- `parent`: The AST node which precedes this one in the tree
+- `visitor`: A [GraphQL::Analysis::Visitor](rdoc-ref:GraphQL::Analysis::Visitor) which is managing this analysis run
 
 For example:
 
 ```ruby
-class BasicCounterAnalyzer < GraphQL::Analysis::AST::Analyzer
+class BasicCounterAnalyzer < GraphQL::Analysis::Analyzer
   def initialize(query_or_multiplex)
     super
     @fields = Set.new
     @arguments = Set.new
   end
 
-  # Visitors are all defined on the AST::Analyzer base class
+  # Visitors are all defined on the Analyzer base class
   # We override them for custom analyzers.
   def on_leave_field(node, _parent, _visitor)
     @fields.add(node.name)
@@ -62,13 +52,13 @@ or if it was skipped by directives. If we want to detect those contexts, we can 
 methods:
 
 ```ruby
-class BasicFieldAnalyzer < GraphQL::Analysis::AST::Analyzer
+class BasicFieldAnalyzer < GraphQL::Analysis::Analyzer
   def initialize(query_or_multiplex)
     super
     @fields = Set.new
   end
 
-  # Visitors are all defined on the AST::Analyzer base class
+  # Visitors are all defined on the Analyzer base class
   # We override them for custom analyzers.
   def on_leave_field(node, _parent, visitor)
     if visitor.skipping? || visitor.visiting_fragment_definition?
@@ -85,18 +75,18 @@ class BasicFieldAnalyzer < GraphQL::Analysis::AST::Analyzer
 end
 ```
 
-See {{ "GraphQL::Analysis::AST::Visitor" | api_doc }} for more information about the `visitor` object.
+See [GraphQL::Analysis::Visitor](rdoc-ref:GraphQL::Analysis::Visitor) for more information about the `visitor` object.
 
 ### Field Arguments
 
-Usually, analyzers will use `on_enter_field` and `on_leave_field` to process queries. To get a field's arguments during analysis, use `visitor.query.arguments_for(node, visitor.field_definition)` ({{ "GraphQL::Query#arguments_for" | api_doc }}). That method returns coerced argument values and normalizes argument literals and variable values.
+Usually, analyzers will use `on_enter_field` and `on_leave_field` to process queries. To get a field's arguments during analysis, use `visitor.query.arguments_for(node, visitor.field_definition)` ([GraphQL::Query#arguments_for](rdoc-ref:GraphQL::Query#arguments_for)). That method returns coerced argument values and normalizes argument literals and variable values.
 
 ### Errors
 
-It is still possible to return errors from an analyzer. To reject a query and halt its execution, you may return {{ "GraphQL::AnalysisError" | api_doc }} in the `result` method:
+It is still possible to return errors from an analyzer. To reject a query and halt its execution, you may return [GraphQL::AnalysisError](rdoc-ref:GraphQL::AnalysisError) in the `result` method:
 
 ```ruby
-class NoFieldsCalledHello < GraphQL::Analysis::AST::Analyzer
+class NoFieldsCalledHello < GraphQL::Analysis::Analyzer
   def on_leave_field(node, _parent, visitor)
     if node.name == "hello"
       @field_called_hello = true
@@ -109,12 +99,16 @@ class NoFieldsCalledHello < GraphQL::Analysis::AST::Analyzer
 end
 ```
 
+If a query analyzer raises [GraphQL::ExecutionError](rdoc-ref:GraphQL::ExecutionError) during analysis, including from `result`, the query is rejected before execution and the error is included in the response. The error's `extensions` are preserved.
+
+A raised [GraphQL::UnauthorizedError](rdoc-ref:GraphQL::UnauthorizedError) is converted to an `AnalysisError` with the same message. These raised errors reject only the affected query; other queries in a multiplex can still execute.
+
 ### Conditional Analysis
 
 Some analyzers might only make sense in certain context, or some might be too expensive to run for every query. To handle these scenarios, your analyzers may answer to an `analyze?` method:
 
 ```ruby
-class BasicFieldAnalyzer < GraphQL::Analysis::AST::Analyzer
+class BasicFieldAnalyzer < GraphQL::Analysis::Analyzer
   # Use the analyze? method to enable or disable a certain analyzer
   # at query time.
   def analyze?

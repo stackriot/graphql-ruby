@@ -37,8 +37,37 @@ describe GraphQL::Types::String do
 
         it "raises GraphQL::StringEncodingError" do
           err = assert_raises(GraphQL::StringEncodingError) { subject }
-          assert_equal "String \"#{string}\" was encoded as ASCII-8BIT! GraphQL requires an encoding compatible with UTF-8.", err.message
+          assert_equal "String \"\\x00\\x00\\x00foo\\xAD\\xAD\\xAD\" was encoded as ASCII-8BIT. GraphQL requires an encoding compatible with UTF-8.", err.message
           assert_equal string, err.string
+        end
+      end
+
+      describe "In queries" do
+        let(:schema) {
+          query_type = Class.new(GraphQL::Schema::Object) do
+            graphql_name "Query"
+
+            field :bad_string, String, resolve_static: true
+            def self.bad_string(context)
+              "\0\0\0foo\255\255\255".dup.force_encoding("BINARY")
+            end
+
+            def bad_string
+              self.class.bad_string(nil)
+            end
+          end
+
+          Class.new(GraphQL::Schema) do
+            query(query_type)
+          end
+        }
+
+        it "includes location in the error message" do
+          err = assert_raises GraphQL::StringEncodingError do
+            schema.execute("{ badString }")
+          end
+          expected_err = exec_next_error_message "Query.badString", "String \"\\x00\\x00\\x00foo\\xAD\\xAD\\xAD\" was encoded as ASCII-8BIT#{if_exec_next("", " @ badString (Query.badString)")}. GraphQL requires an encoding compatible with UTF-8."
+          assert_equal expected_err, err.message
         end
       end
     end
@@ -74,6 +103,54 @@ describe GraphQL::Types::String do
       assert_nil string_type.coerce_isolated_input(100)
       assert_nil string_type.coerce_isolated_input(true)
       assert_nil string_type.coerce_isolated_input(0.999)
+    end
+  end
+
+
+  describe "unicode escapes" do
+    class UnicodeEscapeSchema < GraphQL::Schema
+      class QueryType < GraphQL::Schema::Object
+        field :get_string, String, resolve_static: true do
+          argument :string, String
+        end
+
+        def self.get_string(context, string:)
+          string
+        end
+
+        def get_string(string:)
+          self.class.get_string(context, string: string)
+        end
+      end
+
+      query(QueryType)
+    end
+
+    it "parses escapes properly in single-quoted strings" do
+      query_str = File.read("./spec/fixtures/unicode_escapes/query1.graphql")
+      res = UnicodeEscapeSchema.execute(query_str)
+      assert_equal "d", res["data"]["example1"]
+      assert_equal "\\u0064", res["data"]["example2"]
+      assert_equal "\\u006", res["data"]["example4"]
+
+      error_query_str = query_str.gsub("  # ", "  ")
+      res2 = UnicodeEscapeSchema.execute(error_query_str)
+      expected_err = if USING_C_PARSER
+        "syntax error, unexpected invalid token (\"\\\"\") at [4, 31]"
+      else
+        "Expected string or block string, but it was malformed"
+      end
+      assert_equal [expected_err], res2["errors"].map { |err| err["message"] }
+    end
+
+    it "parses escapes properly in triple-quoted strings" do
+      query_str = File.read("./spec/fixtures/unicode_escapes/query2.graphql")
+      res = UnicodeEscapeSchema.execute(query_str)
+      # No replacing in block strings:
+      assert_equal "\\a", res["data"]["example1"]
+      assert_equal "\\u006", res["data"]["example2"]
+      assert_equal "\\n", res["data"]["example3"]
+      assert_equal "\\u0064", res["data"]["example4"]
     end
   end
 end

@@ -1,9 +1,13 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   class Schema
     class Field
       class ConnectionExtension < GraphQL::Schema::FieldExtension
+        extras [:lookahead]
+
         def apply
           field.argument :after, "String", "Returns the elements in the list that come after the specified cursor.", required: false
           field.argument :before, "String", "Returns the elements in the list that come before the specified cursor.", required: false
@@ -12,62 +16,24 @@ module GraphQL
         end
 
         # Remove pagination args before passing it to a user method
-        def resolve(object:, arguments:, context:)
+        def resolve(object: nil, objects: nil, arguments:, context:)
           next_args = arguments.dup
           next_args.delete(:first)
           next_args.delete(:last)
           next_args.delete(:before)
           next_args.delete(:after)
-          yield(object, next_args, arguments)
+          # Keep the extension's extras (`:lookahead`) out of `connection.arguments`
+          original_arguments = added_extras ? arguments.reject { |k, _v| added_extras.include?(k) } : arguments
+          yield(object || objects, next_args, original_arguments)
         end
 
         def after_resolve(value:, object:, arguments:, context:, memo:)
           original_arguments = memo
-          # rename some inputs to avoid conflicts inside the block
-          maybe_lazy = value
-          value = nil
-          context.schema.after_lazy(maybe_lazy) do |resolved_value|
-            value = resolved_value
-            if value.is_a? GraphQL::ExecutionError
-              # This isn't even going to work because context doesn't have ast_node anymore
-              context.add_error(value)
-              nil
-            elsif value.nil?
-              nil
-            elsif value.is_a?(GraphQL::Pagination::Connection)
-              # update the connection with some things that may not have been provided
-              value.context ||= context
-              value.parent ||= object.object
-              value.first_value ||= original_arguments[:first]
-              value.after_value ||= original_arguments[:after]
-              value.last_value ||= original_arguments[:last]
-              value.before_value ||= original_arguments[:before]
-              value.arguments ||= original_arguments
-              value.field ||= field
-              if field.has_max_page_size? && !value.has_max_page_size_override?
-                value.max_page_size = field.max_page_size
-              end
-              if context.schema.new_connections? && (custom_t = context.schema.connections.edge_class_for_field(@field))
-                value.edge_class = custom_t
-              end
-              value
-            elsif context.schema.new_connections?
-              context.namespace(:connections)[:all_wrappers] ||= context.schema.connections.all_wrappers
-              context.schema.connections.wrap(field, object.object, value, original_arguments, context)
-            else
-              if object.is_a?(GraphQL::Schema::Object)
-                object = object.object
-              end
-              connection_class = GraphQL::Relay::BaseConnection.connection_for_nodes(value)
-              connection_class.new(
-                value,
-                original_arguments,
-                field: field,
-                max_page_size: field.max_page_size,
-                parent: object,
-                context: context,
-              )
-            end
+          lookahead = arguments[:lookahead]
+          context.query.after_lazy(value) do |resolved_value|
+            connection = context.schema.connections.populate_connection(field, object.object, resolved_value, original_arguments, context)
+            connection.lookahead ||= lookahead if connection.is_a?(GraphQL::Pagination::Connection)
+            connection
           end
         end
       end

@@ -1,9 +1,11 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module StaticValidation
-    # Default rules for {GraphQL::StaticValidation::Validator}
+    # Default rules for [GraphQL::StaticValidation::Validator](rdoc-ref:GraphQL::StaticValidation::Validator)
     #
-    # Order is important here. Some validators return {GraphQL::Language::Visitor::SKIP}
+    # Order is important here. Some validators skip later hooks.
     # which stops the visit on that node. That way it doesn't try to find fields on types that
     # don't exist, etc.
     ALL_RULES = [
@@ -33,8 +35,10 @@ module GraphQL
       GraphQL::StaticValidation::VariablesAreUsedAndDefined,
       GraphQL::StaticValidation::VariableUsagesAreAllowed,
       GraphQL::StaticValidation::MutationRootExists,
-      GraphQL::StaticValidation::SubscriptionRootExists,
+      GraphQL::StaticValidation::QueryRootExists,
+      GraphQL::StaticValidation::SubscriptionRootExistsAndSingleSubscriptionSelection,
       GraphQL::StaticValidation::InputObjectNamesAreUnique,
-    ]
+      GraphQL::StaticValidation::OneOfInputObjectsAreValid,
+    ].freeze
   end
 end

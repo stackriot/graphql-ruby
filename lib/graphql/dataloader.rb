@@ -1,87 +1,227 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 require "graphql/dataloader/null_dataloader"
 require "graphql/dataloader/request"
 require "graphql/dataloader/request_all"
 require "graphql/dataloader/source"
+require "graphql/dataloader/active_record_association_source"
+require "graphql/dataloader/active_record_source"
 
 module GraphQL
-  # This plugin supports Fiber-based concurrency, along with {GraphQL::Dataloader::Source}.
+  # This plugin supports Fiber-based concurrency, along with [GraphQL::Dataloader::Source](rdoc-ref:GraphQL::Dataloader::Source).
   #
-  # @example Installing Dataloader
+  # **Examples**
   #
-  #   class MySchema < GraphQL::Schema
-  #     use GraphQL::Dataloader
-  #   end
+  # **Example: Installing Dataloader**
   #
-  # @example Waiting for batch-loaded data in a GraphQL field
+  # ```ruby
+  # class MySchema < GraphQL::Schema
+  #   use GraphQL::Dataloader
+  # end
+  # ```
   #
-  #   field :team, Types::Team, null: true
+  # **Example: Waiting for batch-loaded data in a GraphQL field**
   #
-  #   def team
-  #     dataloader.with(Sources::Record, Team).load(object.team_id)
-  #   end
+  # ```ruby
+  # field :team, Types::Team, null: true
   #
+  # def team
+  #   dataloader.with(Sources::Record, Team).load(object.team_id)
+  # end
+  # ```
   class Dataloader
-    def self.use(schema)
-      schema.dataloader_class = self
+    class << self
+      attr_accessor :default_nonblocking, :default_fiber_limit
     end
 
-    def initialize
-      @source_cache = Hash.new { |h, source_class| h[source_class] = Hash.new { |h2, batch_parameters|
-          source = if RUBY_VERSION < "3"
-            source_class.new(*batch_parameters)
-          else
-            batch_args, batch_kwargs = batch_parameters
-            source_class.new(*batch_args, **batch_kwargs)
-          end
-          source.setup(self)
-          h2[batch_parameters] = source
-        }
+    def self.use(schema, nonblocking: nil, fiber_limit: nil)
+      dataloader_class = if nonblocking
+        warn("`nonblocking: true` is deprecated from `GraphQL::Dataloader`, please use `GraphQL::Dataloader::AsyncDataloader` instead. Docs: https://graphql-ruby.org/dataloader/async_dataloader.")
+        Class.new(self) { self.default_nonblocking = true }
+      else
+        self
+      end
+
+      if fiber_limit
+        dataloader_class = Class.new(dataloader_class)
+        dataloader_class.default_fiber_limit = fiber_limit
+      end
+
+      schema.dataloader_class = dataloader_class
+    end
+
+    # Call the block with a Dataloader instance,
+    # then run all enqueued jobs and return the result of the block.
+    def self.with_dataloading(&block)
+      dataloader = self.new
+      result = nil #: untyped
+      dataloader.append_job {
+        result = block.call(dataloader)
       }
+      dataloader.run
+      result
+    end
+
+    def initialize(nonblocking: self.class.default_nonblocking, fiber_limit: self.class.default_fiber_limit)
+      @source_cache = Hash.new { |h, k| h[k] = {} }.compare_by_identity
+      @pending_source_set = Set.new.compare_by_identity
+      @pending_sources = []
       @pending_jobs = []
+      if !nonblocking.nil?
+        @nonblocking = nonblocking
+      end
+      @fiber_limit = fiber_limit
+      @lazies_at_depth = Hash.new { |h, k| h[k] = [] }
+    end
+
+    # **Returns**
+    #
+    # - `Integer, nil`
+    attr_reader :fiber_limit
+
+    def nonblocking?
+      @nonblocking
+    end
+
+    # This is called before the fiber is spawned, from the parent context (i.e. from
+    # the thread or fiber that it is scheduled from).
+    #
+    # **Returns**
+    #
+    # - `Hash<Symbol, Object>` — Current fiber-local variables
+    #
+    # :call-seq:
+    #   get_fiber_variables() -> Hash[Symbol, Object]
+    def get_fiber_variables
+      fiber_vars = {}
+      Thread.current.keys.each do |fiber_var_key|
+        fiber_vars[fiber_var_key] = Thread.current[fiber_var_key]
+      end
+      fiber_vars
+    end
+
+    # Set up the fiber variables in a new fiber.
+    #
+    # This is called within the fiber, right after it is spawned.
+    #
+    # **Parameters**
+    #
+    # - `vars` (`Hash<Symbol, Object>`) — Fiber-local variables from [get_fiber_variables](rdoc-ref:get_fiber_variables)
+    #
+    # **Returns**
+    #
+    # - `void`
+    #
+    # :call-seq:
+    #   set_fiber_variables(Hash[Symbol, Object] vars) -> void
+    def set_fiber_variables(vars)
+      vars.each { |k, v| Thread.current[k] = v }
+      nil
+    end
+
+    # This method is called when Dataloader is finished using a fiber.
+    # Use it to perform any cleanup, such as releasing database connections (if required manually)
+    def cleanup_fiber
     end
 
     # Get a Source instance from this dataloader, for calling `.load(...)` or `.request(...)` on.
     #
-    # @param source_class [Class<GraphQL::Dataloader::Source]
-    # @param batch_parameters [Array<Object>]
-    # @return [GraphQL::Dataloader::Source] An instance of {source_class}, initialized with `self, *batch_parameters`,
-    #   and cached for the lifetime of this {Multiplex}.
-    if RUBY_VERSION < "3"
-      def with(source_class, *batch_parameters)
-        @source_cache[source_class][batch_parameters]
+    # **Parameters**
+    #
+    # - `source_class` (`Class<GraphQL::Dataloader::Source>`) — The source class to load
+    # - `batch_parameters` (`Array<Object>`)
+    #
+    # **Returns**
+    #
+    # - `GraphQL::Dataloader::Source` — An instance of [source_class](rdoc-ref:source_class), initialized with `self, *batch_parameters`, and cached for the lifetime of this [Multiplex](rdoc-ref:Multiplex).
+    if (RUBY_ENGINE == "ruby" && RUBY_VERSION < "3") || RUBY_ENGINE == "truffleruby" # truffle-ruby wasn't doing well with the implementation below
+      # `define_method` so that Sorbet doesn't see this as a conflicting definition of `#with`
+      define_method(:with) do |source_class, *batch_args|
+        batch_key = source_class.batch_key_for(*batch_args)
+        @source_cache[source_class][batch_key] ||= begin
+          source = source_class.new(*batch_args)
+          source.setup(self)
+          source
+        end
       end
     else
       def with(source_class, *batch_args, **batch_kwargs)
-        batch_parameters = [batch_args, batch_kwargs]
-        @source_cache[source_class][batch_parameters]
+        batch_key = source_class.batch_key_for(*batch_args, **batch_kwargs)
+        @source_cache[source_class][batch_key] ||= begin
+          source = source_class.new(*batch_args, **batch_kwargs)
+          source.setup(self)
+          source
+        end
       end
     end
-
     # Tell the dataloader that this fiber is waiting for data.
     #
     # Dataloader will resume the fiber after the requested data has been loaded (by another Fiber).
     #
-    # @return [void]
-    def yield
+    # **Returns**
+    #
+    # - `void`
+    #
+    # :call-seq:
+    #   yield(source:) -> void
+    def yield(source = Fiber[:__graphql_current_dataloader_source])
+      trace = Fiber[:__graphql_current_multiplex]&.current_trace
+      trace&.dataloader_fiber_yield(source)
       Fiber.yield
+      trace&.dataloader_fiber_resume(source)
       nil
     end
 
-    # @api private Nothing to see here
-    def append_job(&job)
+    def append_job(callable = nil, &job) # :nodoc:
       # Given a block, queue it up to be worked through when `#run` is called.
-      # (If the dataloader is already running, than a Fiber will pick this up later.)
-      @pending_jobs.push(job)
+      # (If the dataloader is already running, then a Fiber will pick this up later.)
+      @pending_jobs.push(callable || job)
+      nil
+    end
+
+    def queue_pending_source(source) # :nodoc:
+      if @pending_source_set.add?(source)
+        @pending_sources << source
+      end
+      nil
+    end
+
+    # Clear any already-loaded objects from [Source](rdoc-ref:Source) caches
+    #
+    # **Returns**
+    #
+    # - `void`
+    #
+    # :call-seq:
+    #   clear_cache() -> void
+    def clear_cache
+      @source_cache.each do |_source_class, batched_sources|
+        batched_sources.each_value(&:clear_cache)
+      end
       nil
     end
 
     # Use a self-contained queue for the work in the block.
     def run_isolated
       prev_queue = @pending_jobs
+      prev_pending_keys = {}
+      prev_lazies_at_depth = @lazies_at_depth
+      @lazies_at_depth = @lazies_at_depth.dup.clear
+      # Clear pending loads but keep already-cached records
+      # in case they are useful to the given block.
+      @source_cache.each do |source_class, batched_sources|
+        batched_sources.each do |batch_args, batched_source_instance|
+          if batched_source_instance.pending?
+            prev_pending_keys[batched_source_instance] = batched_source_instance.pending.dup
+            batched_source_instance.pending.clear
+          end
+        end
+      end
+
       @pending_jobs = []
-      res = nil
+      res = nil #: untyped
       # Make sure the block is inside a Fiber, so it can `Fiber.yield`
       append_job {
         res = yield
@@ -90,163 +230,228 @@ module GraphQL
       res
     ensure
       @pending_jobs = prev_queue
-    end
+      @lazies_at_depth = prev_lazies_at_depth
+      prev_pending_keys #: as !nil
+        .each do |source_instance, pending|
+        pending.each do |key, value|
+          next if source_instance.results.key?(key)
 
-    # @api private Move along, move along
-    def run
-      # At a high level, the algorithm is:
-      #
-      #  A) Inside Fibers, run jobs from the queue one-by-one
-      #    - When one of the jobs yields to the dataloader (`Fiber.yield`), then that fiber will pause
-      #    - In that case, if there are still pending jobs, a new Fiber will be created to run jobs
-      #    - Continue until all jobs have been _started_ by a Fiber. (Any number of those Fibers may be waiting to be resumed, after their data is loaded)
-      #  B) Once all known jobs have been run until they are complete or paused for data, run all pending data sources.
-      #    - Similarly, create a Fiber to consume pending sources and tell them to load their data.
-      #    - If one of those Fibers pauses, then create a new Fiber to continue working through remaining pending sources.
-      #    - When a source causes another source to become pending, run the newly-pending source _first_, since it's a dependency of the previous one.
-      #  C) After all pending sources have been completely loaded (there are no more pending sources), resume any Fibers that were waiting for data.
-      #    - Those Fibers assume that source caches will have been populated with the data they were waiting for.
-      #    - Those Fibers may request data from a source again, in which case they will yeilded and be added to a new pending fiber list.
-      #  D) Once all pending fibers have been resumed once, return to `A` above.
-      #
-      # For whatever reason, the best implementation I could find was to order the steps `[D, A, B, C]`, with a special case for skipping `D`
-      # on the first pass. I just couldn't find a better way to write the loops in a way that was DRY and easy to read.
-      #
-      pending_fibers = []
-      next_fibers = []
-      first_pass = true
-
-      while first_pass || (f = pending_fibers.shift)
-        if first_pass
-          first_pass = false
-        else
-          # These fibers were previously waiting for sources to load data,
-          # resume them. (They might wait again, in which case, re-enqueue them.)
-          resume(f)
-          if f.alive?
-            next_fibers << f
-          end
-        end
-
-        while @pending_jobs.any?
-          # Create a Fiber to consume jobs until one of the jobs yields
-          # or jobs run out
-          f = spawn_fiber {
-            while (job = @pending_jobs.shift)
-              job.call
-            end
-          }
-          resume(f)
-          # In this case, the job yielded. Queue it up to run again after
-          # we load whatever it's waiting for.
-          if f.alive?
-            next_fibers << f
-          end
-        end
-
-        if pending_fibers.empty?
-          # Now, run all Sources which have become pending _before_ resuming GraphQL execution.
-          # Sources might queue up other Sources, which is fine -- those will also run before resuming execution.
-          #
-          # This is where an evented approach would be even better -- can we tell which
-          # fibers are ready to continue, and continue execution there?
-          #
-          source_fiber_queue = if (first_source_fiber = create_source_fiber)
-            [first_source_fiber]
-          else
-            nil
-          end
-
-          if source_fiber_queue
-            while (outer_source_fiber = source_fiber_queue.shift)
-              resume(outer_source_fiber)
-
-              # If this source caused more sources to become pending, run those before running this one again:
-              next_source_fiber = create_source_fiber
-              if next_source_fiber
-                source_fiber_queue << next_source_fiber
-              end
-
-              if outer_source_fiber.alive?
-                source_fiber_queue << outer_source_fiber
-              end
-            end
-          end
-          # Move newly-enqueued Fibers on to the list to be resumed.
-          # Clear out the list of next-round Fibers, so that
-          # any Fibers that pause can be put on it.
-          pending_fibers.concat(next_fibers)
-          next_fibers.clear
+          queue_pending_source(source_instance) if source_instance.pending.empty?
+          source_instance.pending[key] = value
         end
       end
-
-      if @pending_jobs.any?
-        raise "Invariant: #{@pending_jobs.size} pending jobs"
-      elsif pending_fibers.any?
-        raise "Invariant: #{pending_fibers.size} pending fibers"
-      elsif next_fibers.any?
-        raise "Invariant: #{next_fibers.size} next fibers"
-      end
-      nil
     end
 
-    private
-
-    # If there are pending sources, return a fiber for running them.
-    # Otherwise, return `nil`.
+    # **Parameters**
     #
-    # @return [Fiber, nil]
-    def create_source_fiber
-      pending_sources = nil
-      @source_cache.each_value do |source_by_batch_params|
-        source_by_batch_params.each_value do |source|
-          if source.pending?
-            pending_sources ||= []
-            pending_sources << source
+    # - `trace_query_lazy` (`nil, Execution::Multiplex`)
+    #
+    # :call-seq:
+    #   run(nil | Execution::Multiplex trace_query_lazy:)
+    def run(trace_query_lazy: nil)
+      trace = Fiber[:__graphql_current_multiplex]&.current_trace
+      jobs_fiber_limit, total_fiber_limit = calculate_fiber_limit
+      job_fibers = []
+      next_job_fibers = []
+      source_fibers = []
+      next_source_fibers = []
+      first_pass = true #: bool
+      manager = spawn_fiber do
+        trace&.begin_dataloader(self)
+        while first_pass || !job_fibers.empty?
+          first_pass = false
+
+          run_pending_steps(trace, job_fibers, next_job_fibers, jobs_fiber_limit, source_fibers, next_source_fibers, total_fiber_limit)
+
+          if !@lazies_at_depth.empty?
+            with_trace_query_lazy(trace_query_lazy) do
+              if enqueue_next_pending_lazies(@lazies_at_depth)
+                job_fibers.unshift(spawn_job_fiber(trace))
+                run_pending_steps(trace, job_fibers, next_job_fibers, jobs_fiber_limit, source_fibers, next_source_fibers, total_fiber_limit)
+              end
+            end
           end
         end
+
+        trace&.end_dataloader(self)
       end
 
-      if pending_sources
-        # By passing the whole array into this Fiber, it's possible that we set ourselves up for a bunch of no-ops.
-        # For example, if you have sources `[a, b, c]`, and `a` is loaded, then `b` yields to wait for `d`, then
-        # the next fiber would be dispatched with `[c, d]`. It would fulfill `c`, then `d`, then eventually
-        # the previous fiber would start up again. `c` would no longer be pending, but it would still receive `.run_pending_keys`.
-        # That method is short-circuited since it isn't pending any more, but it's still a waste.
-        #
-        # This design could probably be improved by maintaining a `@pending_sources` queue which is shared by the fibers,
-        # similar to `@pending_jobs`. That way, when a fiber is resumed, it would never pick up work that was finished by a different fiber.
-        source_fiber = spawn_fiber do
-          pending_sources.each(&:run_pending_keys)
-        end
+      run_fiber(manager)
+
+      if manager.alive?
+        raise "Invariant: Manager fiber didn't terminate properly."
       end
 
-      source_fiber
-    end
+      if !job_fibers.empty?
+        raise "Invariant: job fibers should have exited but #{job_fibers.size} remained"
+      end
+      if !source_fibers.empty?
+        raise "Invariant: source fibers should have exited but #{source_fibers.size} remained"
+      end
 
-    def resume(fiber)
-      fiber.resume
     rescue UncaughtThrowError => e
       throw e.tag, e.value
     end
 
-    # Copies the thread local vars into the fiber thread local vars. Many
-    # gems (such as RequestStore, MiniRacer, etc.) rely on thread local vars
-    # to keep track of execution context, and without this they do not
-    # behave as expected.
-    #
-    # @see https://github.com/rmosolgo/graphql-ruby/issues/3449
-    def spawn_fiber
-      fiber_locals = {}
+    def run_fiber(f)
+      f.resume
+    end
 
-      Thread.current.keys.each do |fiber_var_key|
-        fiber_locals[fiber_var_key] = Thread.current[fiber_var_key]
+    def lazy_at_depth(depth, lazy) # :nodoc:
+      @lazies_at_depth[depth] << lazy
+    end
+
+    def spawn_fiber
+      fiber_vars = get_fiber_variables
+      Fiber.new(blocking: !@nonblocking) do
+        # Fibers inherit the spawning fiber's storage; give each one its own execution state.
+        Fiber[:__graphql_runtime_info] = nil
+        set_fiber_variables(fiber_vars)
+        yield
+      ensure
+        cleanup_fiber
+      end
+    end
+
+    # Pre-warm the Dataloader cache with ActiveRecord objects which were loaded elsewhere.
+    # These will be used by [Dataloader::ActiveRecordSource](rdoc-ref:Dataloader::ActiveRecordSource), [Dataloader::ActiveRecordAssociationSource](rdoc-ref:Dataloader::ActiveRecordAssociationSource) and their helper
+    # methods, `dataload_record` and `dataload_association`.
+    #
+    # **Parameters**
+    #
+    # - `records` (`Array<ActiveRecord::Base>`) — Already-loaded records to warm the cache with
+    # - `index_by` (`Symbol`) — The attribute to use as the cache key. (Should match `find_by:` when using [ActiveRecordSource](rdoc-ref:ActiveRecordSource))
+    #
+    # **Returns**
+    #
+    # - `void`
+    #
+    # :call-seq:
+    #   merge_records(Array[ActiveRecord::Base] records, Symbol index_by:) -> void
+    def merge_records(records, index_by: :id)
+      records_by_class = Hash.new { |h, k| h[k] = {} }
+      records.each do |r|
+        records_by_class[r.class][r.public_send(index_by)] = r
+      end
+      records_by_class.each do |r_class, records|
+        with(ActiveRecordSource, r_class).merge(records)
+      end
+    end
+
+    private
+
+    # Returns true if anything was actually enqueued
+    def enqueue_next_pending_lazies(lazies_at_depth)
+      smallest_depth = lazies_at_depth.each_key.min
+      return false if smallest_depth.nil?
+
+      lazies = lazies_at_depth.delete(smallest_depth)
+      return false if lazies.empty?
+
+      lazies.each do |lazy|
+        append_job { lazy.value }
       end
 
-      Fiber.new do
-        fiber_locals.each { |k, v| Thread.current[k] = v }
+      true
+    end
+
+    def run_pending_steps(trace, job_fibers, next_job_fibers, jobs_fiber_limit, source_fibers, next_source_fibers, total_fiber_limit)
+      while (f = (job_fibers.shift || (((next_job_fibers.size + job_fibers.size) < jobs_fiber_limit) && spawn_job_fiber(trace))))
+        if f.alive?
+          finished = run_fiber(f)
+          if !finished
+            next_job_fibers << f
+          end
+        end
+      end
+      join_queues(job_fibers, next_job_fibers)
+
+      while (!source_fibers.empty? || !@pending_sources.empty?)
+        while (source_f = source_fibers.shift || (((job_fibers.size + source_fibers.size + next_source_fibers.size + next_job_fibers.size) < total_fiber_limit) && spawn_source_fiber(trace)))
+          if source_f.alive?
+            source_finished = run_fiber(source_f)
+            if !source_finished
+              next_source_fibers << source_f
+            end
+          end
+        end
+        join_queues(source_fibers, next_source_fibers)
+      end
+    end
+
+    def with_trace_query_lazy(multiplex_or_nil, &block)
+      if (multiplex = multiplex_or_nil)
+        query = multiplex.queries.length == 1 ? multiplex.queries[0] : nil
+        multiplex.current_trace.execute_query_lazy(query: query, multiplex: multiplex, &block)
+      else
         yield
+      end
+    end
+
+    def calculate_fiber_limit
+      total_fiber_limit = @fiber_limit || Float::INFINITY
+      if total_fiber_limit < 4
+        raise ArgumentError, "Dataloader fiber limit is too low (#{total_fiber_limit}), it must be at least 4"
+      end
+      total_fiber_limit -= 1 # deduct one fiber for `manager`
+      # Deduct at least one fiber for sources
+      jobs_fiber_limit = total_fiber_limit - 2
+      return jobs_fiber_limit, total_fiber_limit
+    end
+
+    def join_queues(prev_queue, new_queue)
+      @nonblocking && Fiber.scheduler.run
+      prev_queue.concat(new_queue)
+      new_queue.clear
+    end
+
+    def spawn_job_fiber(trace)
+      if !@pending_jobs.empty?
+        spawn_fiber do
+          trace&.dataloader_spawn_execution_fiber(@pending_jobs)
+          while job = @pending_jobs.shift
+            job.call
+          end
+        ensure
+          trace&.dataloader_fiber_exit
+        end
+      end
+    end
+
+    def drain_pending_sources
+      pending_sources = @pending_sources
+      @pending_sources = []
+      @pending_source_set.clear
+
+      pending_sources.select!(&:pending?)
+      pending_sources.empty? ? nil : pending_sources
+    end
+
+    def dequeue_pending_source
+      while (source = @pending_sources.shift)
+        @pending_source_set.delete(source)
+        return source if source.pending?
+      end
+    end
+
+    def spawn_source_fiber(trace)
+      if !@pending_sources.empty?
+        spawn_fiber do
+          trace&.dataloader_spawn_source_fiber(@pending_sources)
+          # This will find sources which were enqueued during `#fetch`:
+          while (source = dequeue_pending_source)
+            next if !source.pending?
+            Fiber[:__graphql_current_dataloader_source] = source
+            trace&.begin_dataloader_source(source)
+            source.run_pending_keys
+            trace&.end_dataloader_source(source)
+          end
+        ensure
+          trace&.dataloader_fiber_exit
+        end
       end
     end
   end
 end
+
+require "graphql/dataloader/async_dataloader"

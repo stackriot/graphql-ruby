@@ -1,4 +1,5 @@
-import { Cable } from "actioncable"
+import type { Consumer } from "@rails/actioncable"
+import defaultChannelId from "./defaultChannelId"
 
 /**
  * Create a Relay Modern-compatible subscription handler.
@@ -8,20 +9,24 @@ import { Cable } from "actioncable"
  * @return {Function}
 */
 interface ActionCableHandlerOptions {
-  cable: Cable
+  cable: Consumer
   operations?: { getOperationId: Function}
+  channelName?: string
+  clientName?: string
+  createChannelId?: () => string
 }
 
 function createActionCableHandler(options: ActionCableHandlerOptions) {
-  return function (operation: { text: string, name: string}, variables: object, _cacheConfig: object, observer: {onError: Function, onNext: Function, onCompleted: Function}) {
-    // unique-ish
-    var channelId = Math.round(Date.now() + Math.random() * 100000).toString(16)
+  const createChannelId = options.createChannelId || defaultChannelId
+  return function (operation: { text: string, name: string, id?: string }, variables: object, _cacheConfig: object, observer: {onError: Function, onNext: Function, onCompleted: Function}) {
+    var channelId = createChannelId()
     var cable = options.cable
     var operations = options.operations
+    var subscribed = true
 
     // Register the subscription by subscribing to the channel
     const channel = cable.subscriptions.create({
-      channel: "GraphqlChannel",
+      channel: options.channelName || "GraphqlChannel",
       channelId: channelId,
     }, {
       connected: function() {
@@ -38,10 +43,10 @@ function createActionCableHandler(options: ActionCableHandlerOptions) {
           channelParams = {
             variables: variables,
             operationName: operation.name,
-            query: operation.text
+            query: operation.text,
+            operationId: (operation.id && options.clientName ? (options.clientName + "/" + operation.id) : null),
           }
         }
-        channel.perform('send', channelParams)
         channel.perform("execute", channelParams)
       },
       // This result is sent back from ActionCable.
@@ -54,7 +59,7 @@ function createActionCableHandler(options: ActionCableHandlerOptions) {
         } else if (result) {
           observer.onNext({data: result.data})
         }
-        if (!payload.more) {
+        if (!payload.more && subscribed) {
           // Subscription is finished
           observer.onCompleted()
         }
@@ -64,7 +69,10 @@ function createActionCableHandler(options: ActionCableHandlerOptions) {
     // Return an object for Relay to unsubscribe with
     return {
       dispose: function() {
-        channel.unsubscribe()
+        if (subscribed) {
+          subscribed = false
+          channel.unsubscribe()
+        }
       }
     }
   }

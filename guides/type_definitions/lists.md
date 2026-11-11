@@ -1,14 +1,6 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Type Definitions
-title: Lists
-desc: Ordered lists containing other types
-index: 6
----
+# Lists
 
-GraphQL has _list types_ which are ordered lists containing items of other types. The following examples use the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#type-language) (SDL).
+GraphQL has _list types_ which are ordered lists containing items of other types. The following examples use the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#list) (SDL).
 
 Fields may return a single scalar value (eg `String`), or a _list_ of scalar values (eg, `[String]`, a list of strings):
 
@@ -56,7 +48,7 @@ To define a list type in Ruby use `[...]` (a Ruby array with one member, the inn
 ```ruby
 # A field returning a list type:
 # Equivalent to `aliases: [String!]` above
-field :aliases, [String], null: true
+field :aliases, [String]
 
 # An argument which accepts a list type:
 argument :categories, [Types::PostCategory], required: false
@@ -83,8 +75,9 @@ Combining list types and non-null types can be a bit tricky. There are four poss
 Here's how those combinations play out:
 
  &nbsp;  | nullable field | non-null field
+ ------|------|------
 nullable items  | <code>[Integer, null: true], null: true</code><br><code># => [Int]</code> | <code>[Integer, null: true], null: false</code><br><code># => [Int]!</code>
-non-null items   | <code>[Integer], null: true</code><br><code># => [Int!]</code> | <code>[Integer], null: false</code><br><code># => [Int!]!</code>
+non-null items   | <code>[Integer]</code><br><code># => [Int!]</code> | <code>[Integer], null: false</code><br><code># => [Int!]!</code>
 
 (The first line is GraphQL-Ruby code. The second line, beginning with `# =>`, is the corresponding GraphQL SDL code.)
 
@@ -105,11 +98,11 @@ In this example, `scores` may not return `null`. It must _always_ return a list.
 
 Here are values the field may return:
 
-Valid | Invalid
-------|------
-`[]`  | `null`
-`[1, 2, ...]`| `[null]`
-| | `[1, null, 2, ...]`
+| Valid | Invalid |
+| ------ | ------ |
+| `[]` | `null` |
+| `[1, 2, ...]` | `[null]` |
+| | `[1, null, 2, ...]` |
 
 ### Non-null lists with nullable items
 
@@ -137,7 +130,7 @@ Valid | Invalid
 Here's an example field:
 
 ```ruby
-field :scores, [Integer, null: true], null: true
+field :scores, [Integer, null: true]
 # In GraphQL,
 #   scores: [Int]
 ```
@@ -160,7 +153,7 @@ Valid | Invalid
 Here's an example field:
 
 ```ruby
-field :scores, [Integer], null: true
+field :scores, [Integer]
 # In GraphQL,
 #   scores: [Int!]
 ```

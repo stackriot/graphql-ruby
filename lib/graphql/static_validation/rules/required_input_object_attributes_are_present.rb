@@ -1,7 +1,13 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module StaticValidation
+    #--
+    # @requires_ancestor: GraphQL::StaticValidation::BaseVisitor
+    # @requires_ancestor: GraphQL::StaticValidation::ArgumentsAreDefined
     module RequiredInputObjectAttributesArePresent
+      #: (GraphQL::Language::Nodes::InputObject node, GraphQL::Language::Nodes::AbstractNode parent) -> void
       def on_input_object(node, parent)
         if parent.is_a? GraphQL::Language::Nodes::Argument
           validate_input_object(node, context, parent)
@@ -11,6 +17,7 @@ module GraphQL
 
       private
 
+      #: (GraphQL::StaticValidation::ValidationContext context, GraphQL::Language::Nodes::Argument parent) -> GraphQL::Schema::Member::type_definition?
       def get_parent_type(context, parent)
         # If argument_definition is defined we're at nested object
         # and need to refer to the containing input object type rather
@@ -26,24 +33,25 @@ module GraphQL
           context.directive_definition || context.field_definition
         end
 
-        parent_type = context.warden.get_argument(defn, parent_name(parent, defn))
+        parent_type = context.types.argument(defn, parent_name(parent, defn))
         parent_type ? parent_type.type.unwrap : nil
       end
 
+      #: (GraphQL::Language::Nodes::InputObject ast_node, GraphQL::StaticValidation::ValidationContext context, GraphQL::Language::Nodes::Argument parent) -> void
       def validate_input_object(ast_node, context, parent)
         parent_type = get_parent_type(context, parent)
         return unless parent_type && parent_type.kind.input_object?
 
-        required_fields = parent_type.arguments
-          .select{|k,v| v.type.kind.non_null?}
-          .keys
+        required_fields = context.types.arguments(parent_type)
+          .select{ |arg| arg.type.kind.non_null? && !arg.default_value? }
+          .map!(&:graphql_name)
 
         present_fields = ast_node.arguments.map(&:name)
         missing_fields = required_fields - present_fields
 
         missing_fields.each do |missing_field|
           path = [*context.path, missing_field]
-          missing_field_type = parent_type.arguments[missing_field].type
+          missing_field_type = context.types.argument(parent_type, missing_field).type
           add_error(RequiredInputObjectAttributesArePresentError.new(
             "Argument '#{missing_field}' on InputObject '#{parent_type.to_type_signature}' is required. Expected type #{missing_field_type.to_type_signature}",
             argument_name: missing_field,

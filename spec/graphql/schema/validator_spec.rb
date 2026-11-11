@@ -12,7 +12,7 @@ describe GraphQL::Schema::Validator do
     end
 
     def validate(object, context, value)
-      if value == @equal_to
+      if value == validation_parameter(@equal_to)
         nil
       else
         "%{validated} doesn't have the right the right value"
@@ -20,18 +20,28 @@ describe GraphQL::Schema::Validator do
     end
   end
 
+  class CustomErrorValidator < GraphQL::Schema::Validator
+    def validate(obj, ctx, value)
+      if value != 7
+        raise GraphQL::ExecutionError.new("#{@validated.path} must be `7`, not `#{value}`", extensions: { requiredValue: 7, actualValue: value })
+      end
+    end
+  end
+
   before do
     GraphQL::Schema::Validator.install(:custom, CustomValidator)
+    GraphQL::Schema::Validator.install(:custom_error, CustomErrorValidator)
   end
 
   after do
     GraphQL::Schema::Validator.uninstall(:custom)
+    GraphQL::Schema::Validator.uninstall(:custom_error)
   end
 
   build_tests(CustomValidator, Integer, [
     {
       name: "with a validator class as name",
-      config: { equal_to: 2 },
+      config: { equal_to: -> { 2 } },
       cases: [
         { query: "{ validated(value: 2) }", error_messages: [], result: 2 },
         { query: "{ validated(value: 3) }", error_messages: ["value doesn't have the right the right value"], result: nil },
@@ -39,16 +49,33 @@ describe GraphQL::Schema::Validator do
     }
   ])
 
+  THE_NUMBER_FOUR = 4
+
   build_tests(:custom, Integer, [
     {
       name: "with an installed symbol name",
-      config: { equal_to: 4 },
+      config: { equal_to: -> { THE_NUMBER_FOUR } },
       cases: [
         { query: "{ validated(value: 4) }", error_messages: [], result: 4 },
         { query: "{ validated(value: 3) }", error_messages: ["value doesn't have the right the right value"], result: nil },
       ]
     }
   ])
+
+  it "works with custom raised errors" do
+    schema = build_schema(Integer, { custom_error: {} })
+    res = schema.execute("{ validated(value: 7) }")
+    assert_equal 7, res["data"]["validated"]
+
+    res = schema.execute("{ validated(value: 77) }")
+    expected_error = {
+      "message"=>"Query.validated.value must be `7`, not `77`",
+      "locations"=>[{"line"=>1, "column"=>3}],
+      "path"=>["validated"],
+      "extensions"=>{"requiredValue"=>7, "actualValue"=>77}
+    }
+    assert_equal [expected_error], res["errors"]
+  end
 
   it "does something with multiple validators" do
     schema = build_schema(String, { length: { minimum: 5 }, inclusion: { in: ["0", "123456", "678910"] }})
@@ -78,7 +105,7 @@ describe GraphQL::Schema::Validator do
     # Two fields with different errors
     res5 = schema.execute("{ v1: validated(value: \"0\") v2: validated(value: \"123456\") v3: validated(value: \"abcdefg\") }")
     expected_data = {"v1"=>nil, "v2"=>"123456", "v3"=>nil}
-    assert_equal expected_data, res5["data"]
+    assert_graphql_equal expected_data, res5["data"]
     errs = [
       {
         "message" => "value is too short (minimum is 5)",
@@ -103,7 +130,7 @@ describe GraphQL::Schema::Validator do
         { "validated" => 6 },
       ]
     }
-    assert_equal expected_data, res["data"]
+    assert_graphql_equal expected_data, res["data"]
 
     res = schema.execute("{ list { validated(value: 3) } }")
     expected_response = {
@@ -114,11 +141,13 @@ describe GraphQL::Schema::Validator do
           { "validated" => nil },
         ]
       },
-      "errors" => [
+      "errors" => if_exec_next([
+        {"message"=>"value must be greater than 5", "locations"=>[{"line"=>1, "column"=>10}], "path"=>["list", 0, "validated"]},
+      ],[
         {"message"=>"value must be greater than 5", "locations"=>[{"line"=>1, "column"=>10}], "path"=>["list", 0, "validated"]},
         {"message"=>"value must be greater than 5", "locations"=>[{"line"=>1, "column"=>10}], "path"=>["list", 1, "validated"]},
         {"message"=>"value must be greater than 5", "locations"=>[{"line"=>1, "column"=>10}], "path"=>["list", 2, "validated"]},
-      ]
+      ])
     }
     assert_equal expected_response, res
   end
@@ -149,14 +178,17 @@ describe GraphQL::Schema::Validator do
       class IntResolver < BaseValidatedResolver
       end
 
-
       class Query < GraphQL::Schema::Object
-        field :int_input, Int, null: true do
-          argument :input, IntInput, required: true
+        field :int_input, Int, resolve_static: true do
+          argument :input, IntInput
+        end
+
+        def self.int_input(context, input:)
+          input[:int] || input[:other_int]
         end
 
         def int_input(input:)
-          input[:int] || input[:other_int]
+          self.class.int_input(context, input: input)
         end
 
         field :int, resolver: IntResolver
@@ -171,7 +203,7 @@ describe GraphQL::Schema::Validator do
 
       res = ValidationInheritanceSchema.execute("{ intInput(input: { int: 1, otherInt: 2 }) }")
       assert_nil res["data"]["intInput"]
-      assert_equal ["IntInput has the wrong arguments"], res["errors"].map { |e| e["message"] }
+      assert_equal ["IntInput must include exactly one of the following arguments: int, otherInt."], res["errors"].map { |e| e["message"] }
     end
 
     it "works with resolvers" do
@@ -180,7 +212,7 @@ describe GraphQL::Schema::Validator do
 
       res = ValidationInheritanceSchema.execute("{ int(int: 1, otherInt: 2) }")
       assert_nil res["data"]["int"]
-      assert_equal ["int has the wrong arguments"], res["errors"].map { |e| e["message"] }
+      assert_equal ["int must include exactly one of the following arguments: int, otherInt."], res["errors"].map { |e| e["message"] }
     end
   end
 end

@@ -1,18 +1,25 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   class Schema
     class Member
-      # @api private
-      module BuildType
-        if !String.method_defined?(:match?)
-          using GraphQL::StringMatchBackport
-        end
-
+      #--
+      # @requires_ancestor: Kernel
+      module BuildType # :nodoc:
         LIST_TYPE_ERROR = "Use an array of [T] or [T, null: true] for list types; other arrays are not supported"
 
         module_function
-        # @param type_expr [String, Class, GraphQL::BaseType]
-        # @return [GraphQL::BaseType]
+        # **Parameters**
+        #
+        # - `type_expr` (`String, Class, GraphQL::BaseType`)
+        #
+        # **Returns**
+        #
+        # - `GraphQL::BaseType`
+        #
+        # :call-seq:
+        #   parse_type(String | Class | GraphQL::BaseType type_expr, null:) -> GraphQL::BaseType
         def parse_type(type_expr, null:)
           list_type = false
 
@@ -39,18 +46,16 @@ module GraphQL
             else
               maybe_type = constantize(type_expr)
               case maybe_type
-              when GraphQL::BaseType
-                maybe_type
               when Module
                 # This is a way to check that it's the right kind of module:
-                if maybe_type.respond_to?(:graphql_definition)
+                if maybe_type.respond_to?(:kind)
                   maybe_type
                 else
                   raise ArgumentError, "Unexpected class/module found for GraphQL type: #{type_expr} (must be type definition class/module)"
                 end
               end
             end
-          when GraphQL::BaseType, GraphQL::Schema::LateBoundType
+          when GraphQL::Schema::LateBoundType
             type_expr
           when Array
             case type_expr.length
@@ -72,7 +77,7 @@ module GraphQL
             type_expr
           when Module
             # This is a way to check that it's the right kind of module:
-            if type_expr.respond_to?(:graphql_definition)
+            if type_expr.respond_to?(:kind)
               type_expr
             else
               # Eg `String` => GraphQL::Types::String
@@ -104,18 +109,26 @@ module GraphQL
 
         def to_type_name(something)
           case something
-          when GraphQL::BaseType, GraphQL::Schema::LateBoundType
+          when GraphQL::Schema::LateBoundType
             something.unwrap.name
           when Array
             to_type_name(something.first)
           when Module
             if something.respond_to?(:graphql_name)
-              something.graphql_name
+              type_defn = something #: as GraphQL::Schema::Member::type_definition
+              type_defn.graphql_name
             else
               to_type_name(something.name)
             end
           when String
-            something.gsub(/\]\[\!/, "").split("::").last
+            if something.include?("]") ||
+                something.include?("[") ||
+                something.include?("!") ||
+                something.include?("::")
+              something.gsub(/\]\[\!/, "").split("::").last
+            else
+              something
+            end
           when GraphQL::Schema::NonNull, GraphQL::Schema::List
             to_type_name(something.unwrap)
           else
@@ -126,9 +139,10 @@ module GraphQL
         def camelize(string)
           return string if string == '_'
           return string unless string.include?("_")
-          camelized = string.split('_').map(&:capitalize).join
+          camelized = string.split('_').each(&:capitalize!).join
           camelized[0] = camelized[0].downcase
-          if (match_data = string.match(/\A(_+)/))
+          if string.start_with?("_")
+            match_data = string.match(/\A(_+)/)
             camelized = "#{match_data[0]}#{camelized}"
           end
           camelized
@@ -172,12 +186,15 @@ module GraphQL
           end
           string2 = string.dup
 
-          string2.gsub!(/([A-Z]+)([A-Z][a-z])/,'\1_\2') # URLDecoder -> URL_Decoder
-          string2.gsub!(/([a-z\d])([A-Z])/,'\1_\2')     # someThing -> some_Thing
+          # URLDecoder -> URL_Decoder, someThing -> some_Thing
+          string2.gsub!(UNDERSCORE_BOUNDARY, "_")
           string2.downcase!
 
           string2
         end
+
+        UNDERSCORE_BOUNDARY = /(?<=[A-Z])(?=[A-Z][a-z])|(?<=[a-z\d])(?=[A-Z])/
+        private_constant :UNDERSCORE_BOUNDARY
       end
     end
   end

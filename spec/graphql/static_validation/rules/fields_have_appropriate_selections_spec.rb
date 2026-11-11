@@ -17,7 +17,7 @@ describe GraphQL::StaticValidation::FieldsHaveAppropriateSelections do
     assert_equal(4, errors.length)
 
     illegal_selection_error = {
-      "message"=>"Selections can't be made on scalars (field 'id' returns Int but has selections [something, someFields])",
+      "message"=>"Selections can't be made on scalars (field 'id' returns Int but has selections [\"something\", \"someFields\"])",
       "locations"=>[{"line"=>6, "column"=>47}],
       "path"=>["query getCheese", "illegalSelectionCheese", "id"],
       "extensions"=>{"code"=>"selectionMismatch", "nodeName"=>"field 'id'", "typeName"=>"Int"}
@@ -41,12 +41,21 @@ describe GraphQL::StaticValidation::FieldsHaveAppropriateSelections do
     assert_includes(errors, interfaces_selection_required_error, "finds interfaces without selections")
 
     incorrect_fragment_error = {
-      "message"=>"Selections can't be made on scalars (field 'flavor' returns String but has inline fragments [String])",
+      "message"=>"Selections can't be made on scalars (field 'flavor' returns String but has selections [\"... on String { ... }\"])",
       "locations"=>[{"line"=>7, "column"=>48}],
       "path"=>["query getCheese", "incorrectFragmentSpread", "flavor"],
       "extensions"=>{"code"=>"selectionMismatch", "nodeName"=>"field 'flavor'", "typeName"=>"String"}
     }
     assert_includes(errors, incorrect_fragment_error, "finds scalar fields with selections")
+  end
+
+  describe "inline fragments without type conditions on scalars" do
+    let(:query_string) { "{ cheese(id: 1) { flavor { ... { __typename } ... @include(if: true) { __typename } } } }" }
+
+    it "adds an error" do
+      assert_equal(1, errors.length)
+      assert_equal "Selections can't be made on scalars (field 'flavor' returns String but has selections [\"... { ... }\", \"... { ... }\"])", errors.first["message"]
+    end
   end
 
   describe "anonymous operations" do
@@ -61,6 +70,154 @@ describe GraphQL::StaticValidation::FieldsHaveAppropriateSelections do
         "extensions"=>{"code"=>"selectionMismatch", "nodeName"=>"anonymous query", "typeName"=>"Query"}
       }
       assert_includes(errors, selections_required_error)
+    end
+  end
+
+  describe "selections and inline fragments on scalars" do
+    let(:query_string) {"
+    {
+      cheese(id: 1) {
+        fatContent {
+          name
+          ... on User {
+            id
+          }
+          ... F
+        }
+      }
+    }
+
+    fragment F on Cheese {
+      id
+    }
+    "}
+    it "returns an error" do
+      expected_err = "Selections can't be made on scalars (field 'fatContent' returns Float but has selections [\"name\", \"... on User { ... }\", \"F\"])"
+      assert_includes(errors.map { |e| e["message"] }, expected_err)
+    end
+  end
+
+  describe "selections on unions" do
+    let(:query_string) { "{ searchDairy }"}
+    describe "When the schema has custom handling with type to return the message" do
+      let(:schema) { Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(true)
+          def self.legacy_invalid_empty_selections_on_union_with_type(query, type)
+            :return_validation_error
+          end
+        }
+      }
+
+      it "returns the default message" do
+        expected_err = "Field must have selections (field 'searchDairy' returns DairyProduct but has no selections. Did you mean 'searchDairy { ... }'?)"
+        assert_includes(errors.map { |e| e["message"] }, expected_err)
+      end
+    end
+
+    describe "When the schema has custom handling to return the message" do
+      let(:schema) { Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(true)
+          def self.legacy_invalid_empty_selections_on_union(query)
+            :return_validation_error
+          end
+        }
+      }
+
+      it "returns the default message" do
+        expected_err = "Field must have selections (field 'searchDairy' returns DairyProduct but has no selections. Did you mean 'searchDairy { ... }'?)"
+        assert_includes(errors.map { |e| e["message"] }, expected_err)
+      end
+    end
+
+    describe "When the schema has custom handling with type to return a custom message" do
+      let(:schema) { Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(true)
+          def self.legacy_invalid_empty_selections_on_union_with_type(query, type)
+            "Boo, hiss!"
+          end
+        }
+      }
+
+      it "returns the custom message" do
+        expected_err = "Boo, hiss!"
+        assert_includes(errors.map { |e| e["message"] }, expected_err)
+      end
+    end
+
+    describe "When the schema has custom handling to return a custom message" do
+      let(:schema) { Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(true)
+          def self.legacy_invalid_empty_selections_on_union(query)
+            "Boo, hiss!"
+          end
+        }
+      }
+
+      it "returns the custom message" do
+        expected_err = "Boo, hiss!"
+        assert_includes(errors.map { |e| e["message"] }, expected_err)
+      end
+    end
+
+    describe "When the schema has custom handling with type to allow the query" do
+      let(:schema) { Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(true)
+          def self.legacy_invalid_empty_selections_on_union_with_type(query, type)
+            nil
+          end
+        }
+      }
+
+      it "returns no errors" do
+        assert_equal [], errors
+      end
+    end
+
+    describe "When the schema has custom handling to allow the query" do
+      let(:schema) { Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(true)
+          def self.legacy_invalid_empty_selections_on_union(query)
+            nil
+          end
+        }
+      }
+
+      it "returns no errors" do
+        assert_equal [], errors
+      end
+    end
+
+    describe "When the schema has no setting" do
+      it "allows it with a warning to query.logger" do
+        expected_warning = "Unions require selections but searchDairy (DairyProduct) doesn't have any. This will fail with a validation error on a future GraphQL-Ruby version. More info: https://graphql-ruby.org/api-doc/#{GraphQL::VERSION}/GraphQL/Schema.html#allow_legacy_invalid_empty_selections_on_union-class_method"
+        stdout, _stderr = capture_io do
+          assert_equal [], errors
+        end
+        assert_includes stdout, expected_warning
+      end
+    end
+
+    describe "When the schema has legacy mode disabled" do
+      let(:schema) { Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(false)
+        }
+      }
+
+      it "requires some" do
+        expected_err = "Field must have selections (field 'searchDairy' returns DairyProduct but has no selections. Did you mean 'searchDairy { ... }'?)"
+        assert_includes(errors.map { |e| e["message"] }, expected_err)
+      end
+    end
+
+    describe "With inherited setting" do
+      let(:schema) { Class.new(Class.new(Dummy::Schema) {
+          allow_legacy_invalid_empty_selections_on_union(true)
+        })
+      }
+
+      it "has correct value" do
+        assert schema.allow_legacy_invalid_empty_selections_on_union
+      end
     end
   end
 end

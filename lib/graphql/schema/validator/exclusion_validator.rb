@@ -1,18 +1,28 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   class Schema
     class Validator
       # Use this to specifically reject values from an argument.
       #
-      # @example disallow certain values
+      # **Examples**
       #
-      #   argument :favorite_non_prime, Integer, required: true,
-      #     validates: { exclusion: { in: [2, 3, 5, 7, ... ]} }
+      # **Example: disallow certain values**
       #
+      # ```ruby
+      # argument :favorite_non_prime, Integer, required: true,
+      #   validates: { exclusion: { in: [2, 3, 5, 7, ... ]} }
+      # ```
       class ExclusionValidator < Validator
-        # @param message [String]
-        # @param in [Array] The values to reject
+        # **Parameters**
+        #
+        # - `message` (`String`)
+        # - `in` (`Array`) — The values to reject
+        #
+        # :call-seq:
+        #   initialize(String message:, Array in:, **default_options)
         def initialize(message: "%{validated} is reserved", in:, **default_options)
           # `in` is a reserved word, so work around that
           @in_list = binding.local_variable_get(:in)
@@ -21,8 +31,10 @@ module GraphQL
         end
 
         def validate(_object, _context, value)
-          if @in_list.include?(value)
-            @message
+          if permitted_empty_value?(value)
+            # pass
+          elsif validation_parameter(@in_list).include?(value)
+            validation_parameter(@message)
           end
         end
       end

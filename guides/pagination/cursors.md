@@ -1,16 +1,8 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Pagination
-title: Cursors
-desc: Advancing through lists with opaque cursors
-index: 4
----
+# Cursors
 
 Connections use _cursors_ to advance through paginated lists. A cursor is an opaque string that indicates a specific point in this.
 
-Here, _opaque_ means that the string has no meaning except its value. cursors shouldn't be decoded, reverse-engineered, or generated ad-hoc. The only guarantee of a cursor is that, after you retrieve one, you can use it to request subsequent or preceeding items in the list.
+Here, _opaque_ means that the string has no meaning except its value. cursors shouldn't be decoded, reverse-engineered, or generated ad-hoc. The only guarantee of a cursor is that, after you retrieve one, you can use it to request subsequent or preceding items in the list.
 
 Although cursors can be tricky, they were chosen for Relay-style connections because they can be implemented in stable and high-performing ways.
 
@@ -39,4 +31,4 @@ end
 
 Now, all connections will use URL-safe base-64 encoding.
 
-From a connection instance, the `cursor_encoders` methods are available via {{ "GraphQL::Pagination::Connection#encode" | api_doc }} and {{ "GraphQL::Pagination::Connection#decode" | api_doc }}
+From a connection instance, the `cursor_encoder` methods are available via [GraphQL::Pagination::Connection](https://github.com/rmosolgo/graphql-ruby/blob/master/lib/graphql/pagination/connection.rb) `#encode` and `#decode`

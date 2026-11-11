@@ -1,6 +1,6 @@
 import ActionCableLink from "../ActionCableLink"
 import { parse } from "graphql"
-import { Cable } from "actioncable"
+import type { Consumer } from "@rails/actioncable"
 import { Operation } from "@apollo/client/core"
 
 describe("ActionCableLink", () => {
@@ -46,7 +46,7 @@ describe("ActionCableLink", () => {
       }
     }
     options = {
-      cable: (cable as unknown) as Cable
+      cable: (cable as unknown) as Consumer
     }
 
     query = parse("subscription { foo { bar } }")
@@ -65,7 +65,7 @@ describe("ActionCableLink", () => {
     // unpack the underlying subscription
     var subscription: any = (observable.subscribe(function(result: any) {
       log.push(["received", result])
-    }) as any)._cleanup
+    }) as any)._finalizers[0]
 
     subscription.received({
       result: {
@@ -93,7 +93,7 @@ describe("ActionCableLink", () => {
         "perform", {
           actionName: "execute",
           options: {
-            query: "subscription {\n  foo {\n    bar\n  }\n}\n",
+            query: "subscription {\n  foo {\n    bar\n  }\n}",
             variables: { a: 1 },
             operationId: "operationId",
             operationName: "operationName"
@@ -112,7 +112,7 @@ describe("ActionCableLink", () => {
     // unpack the underlying subscription
     var subscription: any = (observable.subscribe(function(result: any) {
       log.push(["received", result])
-    }) as any)._cleanup
+    }) as any)._finalizers[0]
 
     subscription.received({
       result: {
@@ -135,7 +135,7 @@ describe("ActionCableLink", () => {
         "perform", {
           actionName: "execute",
           options: {
-            query: "subscription {\n  foo {\n    bar\n  }\n}\n",
+            query: "subscription {\n  foo {\n    bar\n  }\n}",
             variables: { a: 1 },
             operationId: "operationId",
             operationName: "operationName"
@@ -152,7 +152,7 @@ describe("ActionCableLink", () => {
       request(operation, null as any)
 
     // unpack the underlying subscription
-    var subscription: any = (observable.subscribe(() => null) as any)._cleanup
+    var subscription: any = (observable.subscribe(() => null) as any)._finalizers[0]
 
     subscription.unsubscribe()
 
@@ -165,10 +165,57 @@ describe("ActionCableLink", () => {
     ).request(operation, null as any)
 
     // unpack the underlying subscription
-    var subscription: any = (observable.subscribe(() => null) as any)._cleanup
+    var subscription: any = (observable.subscribe(() => null) as any)._finalizers[0]
 
     subscription.unsubscribe()
 
     expect(subscription.params["test"]).toEqual(1)
+  })
+
+  it("generates a unique channelId for each subscription", () => {
+    var link = new ActionCableLink(options)
+    var channelIds = new Set<string>()
+    var subscriptions: any[] = []
+
+    for (var i = 0; i < 1000; i++) {
+      var observable = link.request(operation, null as any)
+      var subscription: any = (observable.subscribe(() => null) as any)._finalizers[0]
+      channelIds.add(subscription.params.channelId)
+      subscriptions.push(subscription)
+    }
+
+    expect(channelIds.size).toBe(1000)
+
+    subscriptions.forEach(function(s) { s.unsubscribe() })
+  })
+
+  it("accepts an injected channel ID function", () => {
+    var link = new ActionCableLink({...options, createChannelId: () => "Channel-ID" })
+    var observable = link.request(operation, null as any)
+    var subscription: any = (observable.subscribe(() => null) as any)._finalizers[0]
+    expect(subscription.params.channelId).toEqual("Channel-ID")
+    subscription.unsubscribe()
+  })
+
+  it('allows passing custom callbacks', () => {
+    var connected = jest.fn()
+    var received = jest.fn()
+    var disconnected = jest.fn()
+
+    var observable = new ActionCableLink(
+      Object.assign(options, { callbacks: { connected, received, disconnected } })
+    ).request(operation, null as any)
+
+    // unpack the underlying subscription
+    var subscription: any = (observable.subscribe(() => null) as any)._finalizers[0]
+
+    subscription.received({ result: { data: "data 1" }, more: true })
+    subscription.received({ result: { data: "data 2" }, more: false })
+    subscription.disconnected()
+
+    expect(connected).toHaveBeenCalledTimes(1)
+    expect(received).toHaveBeenCalledWith({ result: { data: "data 1" }, more: true })
+    expect(received).toHaveBeenCalledWith({ result: { data: "data 2" }, more: false })
+    expect(disconnected).toHaveBeenCalledTimes(1)
   })
 })

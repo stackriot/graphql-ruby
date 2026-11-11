@@ -38,12 +38,6 @@ describe GraphQL::Schema::NonNull do
     end
   end
 
-  describe "to_graphql" do
-    it "will return a non null type" do
-      assert_kind_of GraphQL::NonNullType, non_null_type.to_graphql
-    end
-  end
-
   describe "double-nulling" do
     it "is a parse error in a query" do
       res = Jazz::Schema.execute "
@@ -51,8 +45,13 @@ describe GraphQL::Schema::NonNull do
         find(id: $id) { __typename }
       }
       "
+      expected_err = if USING_C_PARSER
+        "syntax error, unexpected BANG (\"!\"), expecting RPAREN or VAR_SIGN at [2, 21]"
+      else
+        "Expected VAR_SIGN, actual: BANG (\"!\") at [2, 21]"
+      end
 
-      assert_equal ['Parse error on "!" (BANG) at [2, 21]'], res["errors"].map { |e| e["message"] }
+      assert_equal [expected_err], res["errors"].map { |e| e["message"] }
     end
   end
 
@@ -85,6 +84,35 @@ describe GraphQL::Schema::NonNull do
       GRAPHQL
 
       assert_equal [nil], res["data"]["__type"]["fields"].map { |f| f["description"] }
+    end
+  end
+
+  describe "pattern matching" do
+    it "matches the of_type" do
+      assert case non_null_type
+      in { of_type: of_type }
+        true
+      else
+        false
+      end
+    end
+
+    it "matches nested list" do
+      nested = GraphQL::Schema::NonNull.new(GraphQL::Schema::NonNull.new(Jazz::Musician))
+      inner_type = case nested
+      in { of_type: { of_type: t } }
+        t
+      end
+      assert_equal Jazz::Musician, inner_type
+    end
+
+    it "does not match missing keys" do
+      assert case non_null_type
+      in { z: }
+        false
+      else
+        true
+      end
     end
   end
 end

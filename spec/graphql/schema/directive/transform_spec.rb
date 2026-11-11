@@ -4,12 +4,16 @@ require "spec_helper"
 describe GraphQL::Schema::Directive::Transform do
   class TransformSchema < GraphQL::Schema
     class Query < GraphQL::Schema::Object
-      field :echo, String, null: false do
-        argument :input, String, required: true
+      field :echo, String, null: false, resolve_static: true do
+        argument :input, String
+      end
+
+      def self.echo(context, input:)
+        input
       end
 
       def echo(input:)
-        input
+        self.class.echo(context, input: input)
       end
     end
 

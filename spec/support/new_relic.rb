@@ -12,9 +12,28 @@ module NewRelic
     TRANSACTION_NAMES.clear
     EXECUTION_SCOPES.clear
   end
+
   module Agent
     def self.set_transaction_name(name)
       TRANSACTION_NAMES << name
+    end
+
+    module Tracer
+      def self.start_transaction_or_segment(partial_name:, category:)
+        EXECUTION_SCOPES << partial_name
+        Finisher.new(partial_name)
+      end
+
+      class Finisher
+        def initialize(name)
+          @partial_name = name
+        end
+
+        def finish
+          EXECUTION_SCOPES << "FINISH #{@partial_name}"
+          nil
+        end
+      end
     end
 
     module MethodTracerHelpers

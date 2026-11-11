@@ -1,28 +1,31 @@
+# frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   class Schema
+    #--
+    # @requires_ancestor: Module
     module FindInheritedValue
-      module EmptyObjects
-        EMPTY_HASH = {}.freeze
-        EMPTY_ARRAY = [].freeze
-      end
-
+      #: (Module[untyped] child_cls) -> void
       def self.extended(child_cls)
-        child_cls.singleton_class.include(EmptyObjects)
+        child_cls.singleton_class.include(GraphQL::EmptyObjects)
       end
 
+      #: (Module[untyped] child_cls) -> void
       def self.included(child_cls)
-        child_cls.include(EmptyObjects)
+        child_cls.include(GraphQL::EmptyObjects)
       end
 
       private
 
+      # Returns whatever the inherited configuration method returns, so the result is `untyped`.
+      #: (Symbol method_name, ?untyped default_value) -> untyped
       def find_inherited_value(method_name, default_value = nil)
         if self.is_a?(Class)
           superclass.respond_to?(method_name, true) ? superclass.send(method_name) : default_value
         else
-          ancestors_except_self = ancestors
-          ancestors_except_self.delete(self)
-          ancestors_except_self.each do |ancestor|
+          ancestors.each do |ancestor|
+            next if ancestor.equal?(self)
             if ancestor.respond_to?(method_name, true)
               return ancestor.send(method_name)
             end

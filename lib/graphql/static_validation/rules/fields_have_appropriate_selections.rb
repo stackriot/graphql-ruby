@@ -1,14 +1,18 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   module StaticValidation
     # Scalars _can't_ have selections
     # Objects _must_ have selections
+    #--
+    # @requires_ancestor: GraphQL::StaticValidation::BaseVisitor
+    # @requires_ancestor: GraphQL::StaticValidation::BaseVisitor::ContextMethods
     module FieldsHaveAppropriateSelections
       include GraphQL::StaticValidation::Error::ErrorHelper
 
       def on_field(node, parent)
-        field_defn = field_definition
-        if validate_field_selections(node, field_defn.type.unwrap)
+        if validate_field_selections(node, @current_object_type)
           super
         end
       end
@@ -23,16 +27,73 @@ module GraphQL
 
 
       def validate_field_selections(ast_node, resolved_type)
+        # Fast paths for the two most common cases:
+        # 1. Leaf type with no selections (scalars, enums) — most fields
+        # 2. Non-leaf type with selections (objects, interfaces)
+        if resolved_type
+          if ast_node.selections.empty?
+            return true if resolved_type.kind.leaf?
+          else
+            return true unless resolved_type.kind.leaf?
+          end
+        end
+
         msg = if resolved_type.nil?
           nil
-        elsif resolved_type.kind.scalar? && ast_node.selections.any?
-          if ast_node.selections.first.is_a?(GraphQL::Language::Nodes::InlineFragment)
-            "Selections can't be made on scalars (%{node_name} returns #{resolved_type.graphql_name} but has inline fragments [#{ast_node.selections.map(&:type).map(&:name).join(", ")}])"
+        elsif resolved_type.kind.leaf?
+          if !ast_node.selections.empty?
+            selection_strs = ast_node.selections.map do |n|
+              case n
+              when GraphQL::Language::Nodes::InlineFragment
+                if (n_type = n.type)
+                  "\"... on #{n_type.name} { ... }\""
+                else
+                  "\"... { ... }\""
+                end
+              when GraphQL::Language::Nodes::Field
+                "\"#{n.name}\""
+              when GraphQL::Language::Nodes::FragmentSpread
+                "\"#{n.name}\""
+              else
+                raise "Invariant: unexpected selection node: #{n}"
+              end
+            end
+            "Selections can't be made on #{resolved_type.kind.name.sub("_", " ").downcase}s (%{node_name} returns #{resolved_type.graphql_name} but has selections [#{selection_strs.join(", ")}])"
           else
-            "Selections can't be made on scalars (%{node_name} returns #{resolved_type.graphql_name} but has selections [#{ast_node.selections.map(&:name).join(", ")}])"
+            nil
           end
-        elsif resolved_type.kind.fields? && ast_node.selections.empty?
-          "Field must have selections (%{node_name} returns #{resolved_type.graphql_name} but has no selections. Did you mean '#{ast_node.name} { ... }'?)"
+        elsif ast_node.selections.empty?
+          return_validation_error = true
+          legacy_invalid_empty_selection_result = nil
+          if !resolved_type.kind.fields?
+            case @schema.allow_legacy_invalid_empty_selections_on_union
+            when true
+              legacy_invalid_empty_selection_result = @schema.legacy_invalid_empty_selections_on_union_with_type(@context.query, resolved_type)
+              case legacy_invalid_empty_selection_result
+              when :return_validation_error
+                # keep `return_validation_error = true`
+              when String
+                return_validation_error = false
+                # the string is returned below
+              when nil
+                # No error:
+                return_validation_error = false
+                legacy_invalid_empty_selection_result = nil
+              else
+                raise GraphQL::InvariantError, "Unexpected return value from legacy_invalid_empty_selections_on_union_with_type, must be `:return_validation_error`, String, or nil (got: #{legacy_invalid_empty_selection_result.inspect})"
+              end
+            when false
+              # pass -- error below
+            else
+              return_validation_error = false
+              @context.query.logger.warn("Unions require selections but #{ast_node.alias || ast_node.name} (#{resolved_type.graphql_name}) doesn't have any. This will fail with a validation error on a future GraphQL-Ruby version. More info: https://graphql-ruby.org/api-doc/#{GraphQL::VERSION}/GraphQL/Schema.html#allow_legacy_invalid_empty_selections_on_union-class_method")
+            end
+          end
+          if return_validation_error
+            "Field must have selections (%{node_name} returns #{resolved_type.graphql_name} but has no selections. Did you mean '#{ast_node.name} { ... }'?)"
+          else
+            legacy_invalid_empty_selection_result
+          end
         else
           nil
         end

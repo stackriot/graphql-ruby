@@ -46,14 +46,13 @@ describe GraphQL::Relay::RangeAdd do
 
     add_item = Class.new(GraphQL::Schema::RelayClassicMutation) do
       graphql_name "AddItem"
-      argument :name, String, required: true
-      argument :price, Integer, required: true
-      argument :menu_idx, Integer, required: true
+      argument :name, String
+      argument :price, Integer
+      argument :menu_idx, Integer
 
-      field :item_edge, item.edge_type, null: false
-      # On the old runtime, connection: false was required here:
-      field :items, item.connection_type, null: false, connection: TESTING_INTERPRETER
-      field :menu, menu, null: false
+      field :item_edge, item.edge_type, null: false, hash_key: :item_edge
+      field :items, item.connection_type, null: false, hash_key: :items
+      field :menu, menu, null: false, hash_key: :menu
 
       define_method :resolve do |input|
         this_menu = menus[input[:menu_idx]]

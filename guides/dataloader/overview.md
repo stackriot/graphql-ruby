@@ -1,14 +1,6 @@
----
-layout: guide
-search: true
-section: Dataloader
-title: Overview
-desc: Getting started with the Fiber-based Dataloader
-index: 0
-experimental: true
----
+# Overview
 
-GraphQL-Ruby 1.12 includes {{ "GraphQL::Dataloader" | api_doc }}, a module for managing efficient database access in a way that's transparent to application code, backed by Ruby's `Fiber` concurrency primitive.
+ [GraphQL::Dataloader](rdoc-ref:GraphQL::Dataloader) provides efficient, batched access to external services, backed by Ruby's `Fiber` concurrency primitive. It has a per-query result cache and [AsyncDataloader](/dataloader/async_dataloader) supports truly parallel execution out-of-the-box.
 
 `GraphQL::Dataloader` is inspired by [`@bessey`'s proof-of-concept](https://github.com/bessey/graphql-fiber-test/tree/no-gem-changes) and [shopify/graphql-batch](https://github.com/shopify/graphql-batch).
 
@@ -35,9 +27,11 @@ At a high level, `GraphQL::Dataloader`'s usage of `Fiber` looks like this:
 
 Whenever `GraphQL::Dataloader` creates a new `Fiber`, it copies each pair from `Thread.current[...]` and reassigns them inside the new `Fiber`.
 
+`AsyncDataloader`, built on top of the [`async` gem](https://github.com/socketry/async), supports parallel I/O operations (like network and database communication) via Ruby's non-blocking `Fiber.schedule` API. [Learn more →](/dataloader/async_dataloader).
+
 ## Getting Started
 
-To install {{ "GraphQL::Dataloader" | api_doc }}, add it to your schema with `use ...`, for example:
+To install [GraphQL::Dataloader](rdoc-ref:GraphQL::Dataloader), add it to your schema with `use ...`, for example:
 
 ```ruby
 class MySchema < GraphQL::Schema
@@ -49,8 +43,8 @@ end
 Then, inside your schema, you can request batch-loaded objects by their lookup key with `dataloader.with(...).load(...)`:
 
 ```ruby
-field :user, Types::User, null: true do
-  argument :handle, String, required: true
+field :user, Types::User do
+  argument :handle, String
 end
 
 def user(handle:)
@@ -62,8 +56,8 @@ Or, load several objects by passing an array of lookup keys to `.load_all(...)`:
 
 ```ruby
 field :is_following, Boolean, null: false do
-  argument :follower_handle, String, required: true
-  argument :followed_handle, String, required: true
+  argument :follower_handle, String
+  argument :followed_handle, String
 end
 
 def is_following(follower_handle:, followed_handle:)
@@ -79,10 +73,10 @@ To prepare requests from several sources, use `.request(...)`, then call `.load`
 
 ```ruby
 class AddToList < GraphQL::Schema::Mutation
-  argument :handle, String, required: true
-  argument :list, String, required: true, as: :list_name
+  argument :handle, String
+  argument :list, String, as: :list_name
 
-  field :list, Types::UserList, null: true
+  field :list, Types::UserList
 
   def resolve(handle:, list_name:)
     # first, register the requests:
@@ -115,9 +109,9 @@ Then, any arguments with `loads:` will use that method to fetch objects. For exa
 
 ```ruby
 class FollowUser < GraphQL::Schema::Mutation
-  argument :follow_id, ID, required: true, loads: Types::User
+  argument :follow_id, ID, loads: Types::User
 
-  field :followed, Types::User, null: true
+  field :followed, Types::User
 
   def resolve(follow:)
     # `follow` was fetched using the Schema's `object_from_id` hook
@@ -129,4 +123,11 @@ end
 
 ## Data Sources
 
-To implement batch-loading data sources, see the {% internal_link "Sources guide", "/dataloader/sources" %}.
+To implement batch-loading data sources, see the [Sources guide](/dataloader/sources).
+
+## Parallelism
+
+You can run I/O operations in parallel with GraphQL::Dataloader. There are two approaches:
+
+- `AsyncDataloader` uses the `async` gem to automatically background I/O from `Dataloader::Source#fetch` calls. [Read More](/dataloader/async_dataloader)
+- You can manually call `dataloader.yield` after starting work in the background. [Read More](/dataloader/parallelism)

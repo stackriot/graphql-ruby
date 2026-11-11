@@ -1,19 +1,29 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module StaticValidation
+    #--
+    # @requires_ancestor: GraphQL::StaticValidation::BaseVisitor
     module DirectivesAreDefined
-      def initialize(*)
-        super
-        @directive_names = context.warden.directives.map(&:graphql_name)
-      end
-
+      #: (GraphQL::Language::Nodes::Directive node, GraphQL::Language::Nodes::AbstractNode? parent) -> void
       def on_directive(node, parent)
-        if !@directive_names.include?(node.name)
-          add_error(GraphQL::StaticValidation::DirectivesAreDefinedError.new(
-            "Directive @#{node.name} is not defined",
-            nodes: node,
-            directive: node.name
-          ))
+        if !types.directive_exists?(node.name)
+          @directives_are_defined_errors_by_name ||= {} #: Hash[String, GraphQL::StaticValidation::DirectivesAreDefinedError]?
+          error = @directives_are_defined_errors_by_name[node.name] ||= begin
+            suggestion = if schema.did_you_mean
+              @directive_names ||= types.directives.map(&:graphql_name) #: Array[String]?
+              context.did_you_mean_suggestion(node.name, @directive_names)
+            end
+            err = GraphQL::StaticValidation::DirectivesAreDefinedError.new(
+              "Directive @#{node.name} is not defined#{suggestion}",
+              nodes: [],
+              directive: node.name
+            )
+            add_error(err)
+            err
+          end
+          error.nodes << node
         else
           super
         end

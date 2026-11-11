@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 require "spec_helper"
 
-describe GraphQL::Directive do
+describe "GraphQL::Directive" do
   let(:variables) { {"t" => true, "f" => false} }
-  let(:result) { Dummy::Schema.execute(query_string, variables: variables) }
+  let(:result) {
+    Dummy::Schema.execute(query_string, variables: variables)
+  }
   describe "on fields" do
     let(:query_string) { %|query directives($t: Boolean!, $f: Boolean!) {
       cheese(id: 1) {
@@ -45,6 +47,24 @@ describe GraphQL::Directive do
         first_field = result["data"]["__type"]["fields"].first
         assert first_field.key?("name")
         assert !first_field.key?("isDeprecated")
+      end
+    end
+
+    describe "when directive argument variable is explicitly null" do
+      let(:query_string) { <<-GRAPHQL
+        query($f: Boolean = false) {
+          cheese(id: 1) {
+            includeFlavor: flavor @include(if: $f)
+            skipFlavor: flavor @skip(if: $f)
+          }
+        }
+      GRAPHQL
+      }
+      let(:variables) { {"f" => nil} }
+
+      it "returns the coercion error without raising" do
+        expected = "`null` is not a valid input for `Boolean!`, please provide a value for this argument."
+        assert_equal [expected], result["errors"].map { |e| e["message"] }.uniq
       end
     end
 
@@ -140,7 +160,6 @@ describe GraphQL::Directive do
   end
   describe "merging @skip and @include" do
     let(:field_included?) { r = result["data"]["cheese"]; r.has_key?('flavor') && r.has_key?('withVariables') }
-    let(:skip?) { false }
     let(:include?) { true }
     let(:variables) { {"skip" => skip?, "include" => include?} }
     let(:query_string) {"
@@ -273,23 +292,6 @@ describe GraphQL::Directive do
         let(:include?) { false }
         it "is not included" do assert !field_included? end
       end
-    end
-  end
-
-  describe "defining a directive" do
-    let(:directive) {
-      GraphQL::Directive.define do
-        arguments [GraphQL::Argument.define(name: 'skip')]
-      end
-    }
-
-    it "can accept an array of arguments" do
-      assert_equal 1, directive.arguments.length
-      assert_equal 'skip', directive.arguments.first.name
-    end
-
-    it "is not default" do
-      assert_equal false, directive.default_directive?
     end
   end
 end

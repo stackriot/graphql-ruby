@@ -1,6 +1,7 @@
 import printer from "graphql/language/printer"
 import registry from "./registry"
-import { Cable } from "actioncable"
+import defaultChannelId from "./defaultChannelId"
+import type { Consumer } from "@rails/actioncable"
 
 interface ApolloNetworkInterface {
   applyMiddlewares: Function
@@ -8,13 +9,19 @@ interface ApolloNetworkInterface {
   _opts: any
 }
 
-class ActionCableSubscriber {
-  _cable: Cable
-  _networkInterface: ApolloNetworkInterface
+type CreateChannelId = () => string
 
-  constructor(cable: Cable, networkInterface: ApolloNetworkInterface) {
+class ActionCableSubscriber {
+  _cable: Consumer
+  _networkInterface: ApolloNetworkInterface
+  _channelName: string
+  _createChannelId: CreateChannelId
+
+  constructor(cable: Consumer, networkInterface: ApolloNetworkInterface, channelName?: string, createChannelId?: CreateChannelId) {
     this._cable = cable
     this._networkInterface = networkInterface
+    this._channelName = channelName || "GraphqlChannel"
+    this._createChannelId = createChannelId || defaultChannelId
   }
 
   /**
@@ -29,9 +36,9 @@ class ActionCableSubscriber {
   subscribe(request: any, handler: any) {
     var networkInterface = this._networkInterface
     // unique-ish
-    var channelId = Math.round(Date.now() + Math.random() * 100000).toString(16)
+    var channelId = this._createChannelId()
     var channel = this._cable.subscriptions.create({
-      channel: "GraphqlChannel",
+      channel: this._channelName,
       channelId: channelId,
     }, {
       // After connecting, send the data over ActionCable
@@ -58,12 +65,12 @@ class ActionCableSubscriber {
       // - more: true if this channel should stay open
       // - result: the GraphQL response for this result
       received: function(payload) {
-        if (!payload.more) {
-          registry.unsubscribe(id)
-        }
         var result = payload.result
         if (result) {
           handler(result.errors, result.data)
+        }
+        if (!payload.more) {
+          registry.unsubscribe(id)
         }
       },
     })

@@ -1,7 +1,8 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 
 # behavior modules:
-require "graphql/types/relay/default_relay"
 require "graphql/types/relay/connection_behaviors"
 require "graphql/types/relay/edge_behaviors"
 require "graphql/types/relay/node_behaviors"
@@ -14,8 +15,6 @@ require "graphql/types/relay/page_info"
 require "graphql/types/relay/base_connection"
 require "graphql/types/relay/base_edge"
 require "graphql/types/relay/node"
-require "graphql/types/relay/node_field"
-require "graphql/types/relay/nodes_field"
 
 module GraphQL
   module Types
@@ -26,11 +25,11 @@ module GraphQL
     # open up the source files and copy the relevant methods and configuration into
     # your own classes.
     #
-    # For example, the provided object types extend {Types::Relay::BaseObject},
+    # For example, the provided object types extend `Types::Relay::BaseObject`,
     # but you might want to:
     #
-    # 1. Migrate the extensions from {Types::Relay::BaseObject} into _your app's_ base object
-    # 2. Copy {Relay::BaseConnection}, {Relay::BaseEdge}, etc into _your app_, and
+    # 1. Migrate the extensions from `Types::Relay::BaseObject` into _your app's_ base object
+    # 2. Copy [Relay::BaseConnection](rdoc-ref:Relay::BaseConnection), [Relay::BaseEdge](rdoc-ref:Relay::BaseEdge), etc into _your app_, and
     #   change them to extend _your_ base object.
     #
     # Similarly, `BaseField`'s extensions could be migrated to your app

@@ -1,25 +1,22 @@
 # frozen_string_literal: true
-require_relative "./query_depth"
+#--
+# typed: strict
 module GraphQL
   module Analysis
-    # Used under the hood to implement depth validation,
-    # see {Schema#max_depth} and {Query#max_depth}
-    #
-    # @example Assert max depth of 10
-    #   # DON'T actually do this, graphql-ruby
-    #   # Does this for you based on your `max_depth` setting
-    #   MySchema.query_analyzers << GraphQL::Analysis::MaxQueryDepth.new(10)
-    #
-    class MaxQueryDepth < GraphQL::Analysis::QueryDepth
-      def initialize(max_depth)
-        disallow_excessive_depth = ->(query, depth) {
-          if depth > max_depth
-            GraphQL::AnalysisError.new("Query has depth of #{depth}, which exceeds max depth of #{max_depth}")
-          else
-            nil
-          end
-        }
-        super(&disallow_excessive_depth)
+    class MaxQueryDepth < QueryDepth
+      #: -> GraphQL::AnalysisError?
+      def result
+        configured_max_depth = if query
+          query.max_depth
+        else
+          multiplex.schema.max_depth
+        end
+
+        if configured_max_depth && @max_depth > configured_max_depth
+          GraphQL::AnalysisError.new("Query has depth of #{@max_depth}, which exceeds max depth of #{configured_max_depth}")
+        else
+          nil
+        end
       end
     end
   end

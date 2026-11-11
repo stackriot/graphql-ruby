@@ -1,10 +1,21 @@
+inherit_from: .rubocop_sorbet_todo.yml
+
+plugins:
+  - rubocop-sorbet
+
 require:
-  - ./cop/none_without_block_cop
-  - ./cop/no_focus_cop
+  - ./cop/development/none_without_block_cop
+  - ./cop/development/no_eval_cop
+  - ./cop/development/no_focus_cop
+  - ./lib/graphql/rubocop/graphql/default_null_true
+  - ./lib/graphql/rubocop/graphql/default_required_true
+  - ./cop/development/context_is_passed_cop
+  - ./cop/development/trace_methods_cop.rb
 
 AllCops:
   DisabledByDefault: true
-  TargetRubyVersion: 2.2
+  SuggestExtensions: false
+  TargetRubyVersion: 2.7
   Exclude:
     - 'lib/graphql/language/lexer.rb'
     - 'lib/graphql/language/parser.rb'
@@ -12,6 +23,46 @@ AllCops:
     - 'tmp/**/*'
     - 'vendor/**/*'
     - 'spec/integration/tmp/**/*'
+    - 'spec/fixtures/cop/*.rb'
+
+Layout/LeadingCommentSpace:
+  AllowRBSInlineAnnotation: true
+
+Development/ContextIsPassedCop:
+  Exclude:
+    - 'spec/**/*'
+    - 'cop/**/*'
+    - 'lib/graphql/schema/validation.rb'
+    - 'lib/graphql/static_validation/literal_validator.rb'
+    - 'lib/graphql/static_validation/rules/**/*.rb'
+    - 'lib/graphql/static_validation/base_visitor.rb' # `types` here is the query's visibility profile
+    # AST-related:
+    - 'lib/graphql/schema/build_from_definition.rb'
+    - 'lib/graphql/language/printer.rb'
+    - 'lib/graphql/language/nodes.rb'
+    # Build-time, not runtime:
+    - 'lib/graphql/schema/addition.rb'
+    - 'lib/graphql/schema/introspection_system.rb'
+    # Methods from generators
+    - 'lib/generators/graphql/type_generator.rb'
+
+Development/NoneWithoutBlockCop:
+  Include:
+    - "lib/**/*"
+    - "spec/**/*"
+
+Development/NoEvalCop:
+  Include:
+    - "lib/**/*"
+
+Development/NoFocusCop:
+  Include:
+    - "spec/**/*"
+
+Development/TraceMethodsCop:
+  Include:
+    - "lib/graphql/tracing/perfetto_trace.rb"
+    - "lib/graphql/tracing/notifications_trace.rb"
 
 # def ...
 # end
@@ -39,6 +90,7 @@ Style/ClassAndModuleChildren:
 
 Layout/EmptyLineBetweenDefs:
   AllowAdjacentOneLineDefs: true
+  NumberOfEmptyLines: [0, 1, 2]
 
 Style/FrozenStringLiteralComment:
   Enabled: true
@@ -49,9 +101,6 @@ Layout/IndentationWidth:
 Style/LambdaCall:
   EnforcedStyle: call
 
-Layout/LeadingCommentSpace:
-  Enabled: true
-
 Naming/MethodName:
   EnforcedStyle: snake_case
 
@@ -61,3 +110,14 @@ Style/WordArray:
 # ->(...) { ... }
 Layout/SpaceInLambdaLiteral:
   Enabled: true # Default is "require_no_space"
+
+GraphQL/DefaultNullTrue:
+  Enabled: true
+
+GraphQL/DefaultRequiredTrue:
+  Enabled: true
+
+Sorbet/HasSigil:
+  Enabled: true
+  Include:
+    - "lib/**/*.rb"

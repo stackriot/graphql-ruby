@@ -1,20 +1,10 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Type Definitions
-title: Interfaces
-desc: Interfaces are lists of fields which objects may implement
-index: 4
-redirect_from:
-  - /types/abstract_types/
----
+# Interfaces
 
 Interfaces are lists of fields which may be implemented by object types.
 
 An interface has fields, but it's never actually instantiated. Instead, objects may _implement_ interfaces, which makes them a _member_ of that interface. Also, fields may _return_ interface types. When this happens, the returned object may be any member of that interface.
 
-For example, let's say a `Customer` (interface) may be either an `Individual` (object) or a `Company` (object). Here's the structure in the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#type-language) (SDL):
+For example, let's say a `Customer` (interface) may be either an `Individual` (object) or a `Company` (object). Here's the structure in the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#interface-types) (SDL):
 
 ```graphql
 interface Customer {
@@ -63,11 +53,11 @@ Whether the objects are `Company` or `Individual`, it doesn't matter -- you stil
 
 This means, "if the customer is an `Individual`, also get the customer's company name".
 
-Interfaces are a good choice whenever a set of objects are used interchangeably, and they have several significant fields in common. When they don't have fields in common, use a {% internal_link "Union", "/type_definitions/unions" %} instead.
+Interfaces are a good choice whenever a set of objects are used interchangeably, and they have several significant fields in common. When they don't have fields in common, use a [Union](/type_definitions/unions) instead.
 
 ## Defining Interface Types
 
-Interfaces are Ruby modules which include {{ "GraphQL::Schema::Interface" | api_doc }}. First, make a base module:
+Interfaces are Ruby modules which include [GraphQL::Schema::Interface](rdoc-ref:GraphQL::Schema::Interface). First, make a base module:
 
 ```ruby
 module Types::BaseInterface
@@ -80,6 +70,7 @@ Then, include that into each interface:
 ```ruby
 module Types::RetailItem
   include Types::BaseInterface
+  comment "TODO comment in the RetailItem interface"
   description "Something that can be bought"
   field :price, Types::Price, "How much this item costs", null: false
 
@@ -138,7 +129,7 @@ end
 This method will be called by objects who implement the interface. To override this implementation,
 object classes can override the `#price` method.
 
-Read more in the {% internal_link "Fields guide", "/fields/introduction" %}.
+Read more in the [Fields guide](/fields/introduction).
 
 ### Definition Methods
 
@@ -176,6 +167,8 @@ end
 ```
 
 The type definition DSL uses this mechanism, too, so you can override those methods here also.
+
+Note: Under the hood, `definition_methods` causes a module to be `extend`ed by the interface. Any calls to `extend` or `implement` may override methods from `definition_methods`.
 
 ### Resolve Type
 
@@ -237,7 +230,7 @@ If you add an object type which implements an interface, but that object type do
 module Types::RetailItem
   include Types::BaseInterface
   # ...
-  orphan_types Types::Comment
+  orphan_types Types::Car
 end
 ```
 
@@ -245,7 +238,7 @@ Alternatively you can add the object types to the schema's `orphan_types`:
 
 ```ruby
 class MySchema < GraphQL::Schema
-  orphan_types Types::Comment
+  orphan_types Types::Car
 end
 ```
 

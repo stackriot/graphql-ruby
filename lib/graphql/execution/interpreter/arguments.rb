@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   module Execution
@@ -8,7 +10,7 @@ module GraphQL
       # This object is immutable so that the runtime code can be sure that
       # modifications don't leak from one use to another
       #
-      # @see GraphQL::Query#arguments_for to get access to these objects.
+      # See [GraphQL::Query#arguments_for](rdoc-ref:GraphQL::Query#arguments_for) to get access to these objects.
       class Arguments
         extend Forwardable
         include GraphQL::Dig
@@ -16,11 +18,18 @@ module GraphQL
         # The Ruby-style arguments hash, ready for a resolver.
         # This hash is the one used at runtime.
         #
-        # @return [Hash<Symbol, Object>]
+        # **Returns**
+        #
+        # - `Hash<Symbol, Object>`
         attr_reader :keyword_arguments
 
-        # @param argument_values [nil, Hash{Symbol => ArgumentValue}]
-        # @param keyword_arguments [nil, Hash{Symbol => Object}]
+        # **Parameters**
+        #
+        # - `argument_values` (`nil, Hash{Symbol => ArgumentValue}`)
+        # - `keyword_arguments` (`nil, Hash{Symbol => Object}`)
+        #
+        # :call-seq:
+        #   initialize(nil | Hash[Symbol, Object] keyword_arguments:, nil | Hash[Symbol, ArgumentValue] argument_values:)
         def initialize(keyword_arguments: nil, argument_values:)
           @empty = argument_values.nil? || argument_values.empty?
           # This is only present when `extras` have been merged in:
@@ -52,14 +61,16 @@ module GraphQL
           freeze
         end
 
-        # @return [Hash{Symbol => ArgumentValue}]
+        # **Returns**
+        #
+        # - `Hash{Symbol => ArgumentValue}`
         attr_reader :argument_values
 
         def empty?
           @empty
         end
 
-        def_delegators :keyword_arguments, :key?, :[], :fetch, :keys, :each, :values
+        def_delegators :keyword_arguments, :key?, :[], :fetch, :keys, :each, :values, :size, :to_h
         def_delegators :argument_values, :each_value
 
         def inspect
@@ -70,17 +81,22 @@ module GraphQL
         #
         # This is called by the runtime to implement field `extras: [...]`
         #
-        # @param extra_args [Hash<Symbol => Object>]
-        # @return [Interpreter::Arguments]
-        # @api private
-        def merge_extras(extra_args)
+        #
+        # **Parameters**
+        #
+        # - `extra_args` (`Hash<Symbol => Object>`)
+        #
+        # **Returns**
+        #
+        # - `Interpreter::Arguments`
+        def merge_extras(extra_args) # :nodoc:
           self.class.new(
             argument_values: argument_values,
             keyword_arguments: keyword_arguments.merge(extra_args)
           )
         end
 
-        NO_ARGS = {}.freeze
+        NO_ARGS = GraphQL::EmptyObjects::EMPTY_HASH
         EMPTY = self.new(argument_values: nil, keyword_arguments: NO_ARGS).freeze
       end
     end

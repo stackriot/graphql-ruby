@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: ignore
 require 'rails/generators'
 require 'rails/generators/base'
 require_relative 'core'

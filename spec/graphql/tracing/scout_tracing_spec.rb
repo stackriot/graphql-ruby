@@ -5,12 +5,16 @@ require "spec_helper"
 describe GraphQL::Tracing::ScoutTracing do
   module ScoutApmTest
     class Query < GraphQL::Schema::Object
-      add_field GraphQL::Types::Relay::NodeField
+      include GraphQL::Types::Relay::HasNodeField
 
-      field :int, Integer, null: false
+      field :int, Integer, null: false, resolve_static: true
+
+      def self.int(context)
+        1
+      end
 
       def int
-        1
+        self.class.int(context)
       end
     end
 

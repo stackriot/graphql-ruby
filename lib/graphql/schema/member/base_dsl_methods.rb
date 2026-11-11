@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 require "graphql/schema/find_inherited_value"
 
@@ -6,49 +8,78 @@ module GraphQL
   class Schema
     class Member
       # DSL methods shared by lots of things in the GraphQL Schema.
-      # @api private
-      # @see Classes that extend this, eg {GraphQL::Schema::Object}
-      module BaseDSLMethods
+      # See classes that extend this, eg [GraphQL::Schema::Object](rdoc-ref:GraphQL::Schema::Object)
+      #--
+      # @requires_ancestor: Kernel
+      # @requires_ancestor: Module
+      module BaseDSLMethods # :nodoc:
         include GraphQL::Schema::FindInheritedValue
 
         # Call this with a new name to override the default name for this schema member; OR
         # call it without an argument to get the name of this schema member
         #
         # The default name is implemented in default_graphql_name
-        # @param new_name [String]
-        # @return [String]
+        #
+        # **Parameters**
+        #
+        # - `new_name` (`String`)
+        #
+        # **Returns**
+        #
+        # - `String`
+        #
+        # :call-seq:
+        #   graphql_name(String new_name) -> String
         def graphql_name(new_name = nil)
           if new_name
             GraphQL::NameValidator.validate!(new_name)
             @graphql_name = new_name
           else
-            overridden_graphql_name || default_graphql_name
+            @graphql_name ||= default_graphql_name
           end
-        end
-
-        def overridden_graphql_name
-          defined?(@graphql_name) ? @graphql_name : nil
-        end
-
-        # Just a convenience method to point out that people should use graphql_name instead
-        def name(new_name = nil)
-          return super() if new_name.nil?
-
-          fail(
-            "The new name override method is `graphql_name`, not `name`. Usage: "\
-            "graphql_name \"#{new_name}\""
-          )
         end
 
         # Call this method to provide a new description; OR
         # call it without an argument to get the description
-        # @param new_description [String]
-        # @return [String]
+        #
+        # **Parameters**
+        #
+        # - `new_description` (`String`)
+        #
+        # **Returns**
+        #
+        # - `String`
+        #
+        # :call-seq:
+        #   description(String new_description) -> String
         def description(new_description = nil)
           if new_description
             @description = new_description
           elsif defined?(@description)
             @description
+          else
+            @description = nil
+          end
+        end
+
+        # Call this method to provide a new comment; OR
+        # call it without an argument to get the comment
+        #
+        # **Parameters**
+        #
+        # - `new_comment` (`String`)
+        #
+        # **Returns**
+        #
+        # - `String, nil`
+        #
+        # :call-seq:
+        #   comment(String new_comment) -> String | nil
+        def comment(new_comment = NOT_CONFIGURED)
+          if !NOT_CONFIGURED.equal?(new_comment)
+            @comment = new_comment
+          elsif defined?(@comment)
+            @comment
           else
             nil
           end
@@ -56,18 +87,31 @@ module GraphQL
 
         # This pushes some configurations _down_ the inheritance tree,
         # in order to prevent repetitive lookups at runtime.
+        #--
+        # @requires_ancestor: Module
+        # @requires_ancestor: GraphQL::Schema::Member::BaseDSLMethods
         module ConfigurationExtension
           def inherited(child_class)
             child_class.introspection(introspection)
             child_class.description(description)
-            if overridden_graphql_name
-              child_class.graphql_name(overridden_graphql_name)
+            child_class.comment(nil)
+            child_class.default_graphql_name = nil
+
+            if defined?(@graphql_name) && @graphql_name && (self.name.nil? || graphql_name != default_graphql_name)
+              child_class.graphql_name(graphql_name)
+            else
+              child_class.graphql_name = nil
             end
             super
           end
         end
 
-        # @return [Boolean] If true, this object is part of the introspection system
+        # **Returns**
+        #
+        # - `Boolean` — If true, this object is part of the introspection system
+        #
+        # :call-seq:
+        #   introspection(new_introspection) -> bool
         def introspection(new_introspection = nil)
           if !new_introspection.nil?
             @introspection = new_introspection
@@ -79,11 +123,17 @@ module GraphQL
         end
 
         def introspection?
-          introspection
+          !!@introspection
         end
 
         # The mutation this type was derived from, if it was derived from a mutation
-        # @return [Class]
+        #
+        # **Returns**
+        #
+        # - `Class`
+        #
+        # :call-seq:
+        #   mutation(mutation_class) -> Class
         def mutation(mutation_class = nil)
           if mutation_class
             @mutation = mutation_class
@@ -94,11 +144,6 @@ module GraphQL
           end
         end
 
-        # @return [GraphQL::BaseType] Convert this type to a legacy-style object.
-        def to_graphql
-          raise GraphQL::RequiredImplementationMissingError
-        end
-
         alias :unwrap :itself
 
         # Creates the default name for a schema member.
@@ -107,8 +152,10 @@ module GraphQL
         def default_graphql_name
           @default_graphql_name ||= begin
             raise GraphQL::RequiredImplementationMissingError, 'Anonymous class should declare a `graphql_name`' if name.nil?
-
-            name.split("::").last.sub(/Type\Z/, "")
+            class_name = name #: as !nil
+            short_name = class_name.split("::").last #: as String
+            g_name = -short_name
+            g_name.end_with?("Type") ? g_name.sub(/Type\Z/, "") : g_name
           end
         end
 
@@ -116,13 +163,17 @@ module GraphQL
           true
         end
 
-        def accessible?(context)
-          true
-        end
-
         def authorized?(object, context)
           true
         end
+
+        def default_relay?
+          false
+        end
+
+        protected
+
+        attr_writer :default_graphql_name, :graphql_name
       end
     end
   end

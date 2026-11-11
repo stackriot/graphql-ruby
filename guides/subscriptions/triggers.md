@@ -1,16 +1,8 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Subscriptions
-title: Triggers
-desc: Sending updates from your application to GraphQL
-index: 2
----
+# Triggers
 
 From your application, you can push updates to GraphQL clients with `.trigger`.
 
-Events are triggered _by name_, and the name must match fields on your {% internal_link "Subscription Type","subscriptions/subscription_type" %}
+Events are triggered _by name_, and the name must match fields on your [Subscription Type](/subscriptions/subscription_type)
 
 ```ruby
 # Update the system with the new blog post:
@@ -28,7 +20,7 @@ The arguments are:
 
 To send updates to _certain clients only_, you can use `scope:` to narrow the trigger's reach.
 
-Scopes are based on query context: a value in `context:` is used as the scope; an equivalent value must be passed with `.trigger(... scope:)` to update that client. (The value is serialized with {{ "GraphQL::Subscriptions::Serialize" | api_doc }})
+Scopes are based on query context: a value in `context:` is used as the scope; an equivalent value must be passed with `.trigger(... scope:)` to update that client. (The value is serialized with `GraphQL::Subscriptions::Serialize`.)
 
 To specify that a topic is scoped, add a `subscription_scope` option to the Subscription class:
 
@@ -42,7 +34,7 @@ class Subscriptions::CommentAdded < Subscription::BaseSubscription
 end
 ```
 
-(Read more in the {% internal_link "Subscription Classes guide", "subscriptions/subscription_classes#scope" %}.)
+(Read more in the [Subscription Classes guide](/subscriptions/subscription_classes#scope).)
 
 Then, subscription operations should have a `context: { current_user_id: ... }` value, for example:
 
@@ -62,3 +54,13 @@ MySchema.subscriptions.trigger(:comment_added, {}, comment, scope: author_id)
 ```
 
 Since this trigger has a `scope:`, only subscribers with a matching scope value will be updated.
+
+## Validation
+
+By default, subscriptions are re-validated when a trigger causes them to send updates. To disable this, you can pass `validate_update: false` when hooking up subscriptions to your schema. For example:
+
+```ruby
+use SomeSubscriptions, validate_update: false
+```
+
+If you're sure you won't be releasing breaking changes to your schema, this setting can reduce overhead in evaluating updates.

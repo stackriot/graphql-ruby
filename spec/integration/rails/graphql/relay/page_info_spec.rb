@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 require "spec_helper"
 
-describe GraphQL::Relay::PageInfo do
+describe "GraphQL::Relay::PageInfo" do
   def get_page_info(result)
     result["data"]["empire"]["bases"]["pageInfo"]
   end
@@ -36,10 +36,6 @@ describe GraphQL::Relay::PageInfo do
       }
     }
   |}
-
-  it "is a default relay type" do
-    assert_equal true, GraphQL::Relay::PageInfo.default_relay?
-  end
 
   describe 'hasNextPage / hasPreviousPage' do
     it "hasNextPage is true if there are more items" do
@@ -110,6 +106,15 @@ describe GraphQL::Relay::PageInfo do
     end
   end
 
+  it "can be redefined" do
+    conn_type = Class.new(GraphQL::Schema::Object) do
+      include GraphQL::Types::Relay::ConnectionBehaviors
 
+      get_field("pageInfo").type = GraphQL::Types::Int.to_non_null_type
+    end
 
+    assert_equal "Int!", conn_type.fields["pageInfo"].type.to_type_signature
+    # The original is unchanged:
+    assert_equal "PageInfo!", GraphQL::Types::Relay::BaseConnection.fields["pageInfo"].type.to_type_signature
+  end
 end

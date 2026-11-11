@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 require "spec_helper"
 
-describe GraphQL::Query::Variables do
+describe GraphQL::Execution::VariableValues do
   let(:query_string) {%|
   query getCheese(
     $animals: [DairyAnimal!],
@@ -15,19 +15,10 @@ describe GraphQL::Query::Variables do
   }
   |}
   let(:ast_variables) { GraphQL.parse(query_string).definitions.first.variables }
-  let(:schema) {
-    Class.new(Dummy::Schema) {
-      # This tests coercion behavior which only happens when `.interpreter?` is false
-      use GraphQL::Execution::Execute
-      use GraphQL::Analysis
-    }
-  }
-  let(:query_context) { GraphQL::Query.new(schema, "{ __typename }").context }
+  let(:schema) { Dummy::Schema }
   let(:variables) {
-    GraphQL::Query::Variables.new(
-    query_context,
-    ast_variables,
-    provided_variables)
+    query = GraphQL::Query.new(schema, query_string, validate: false, variables: provided_variables)
+    query.variables
   }
 
   describe "#to_h" do
@@ -35,7 +26,7 @@ describe GraphQL::Query::Variables do
 
     it "returns a hash representation including default values" do
       expected_hash = {
-        "animals" => ["YAK"],
+        "animals" => "YAK", # This is converted to a single-item list later on
         "intDefaultNull" => nil,
         "intWithDefault" => 10,
       }
@@ -44,55 +35,6 @@ describe GraphQL::Query::Variables do
   end
 
   describe "#initialize" do
-    describe "coercing inputs" do
-      let(:provided_variables) { { "animals" => "YAK" } }
-
-      it "coerces single items into one-element lists" do
-        assert_equal ["YAK"], variables["animals"]
-      end
-    end
-
-    describe "symbol keys" do
-      let(:query_string) { <<-GRAPHQL
-        query testVariables(
-          $dairy_product_1: DairyProductInput!
-          $dairy_product_2: DairyProductInput!
-        ) {
-          __typename
-        }
-      GRAPHQL
-      }
-
-      let(:provided_variables) {
-        {
-          dairy_product_1: { source: "COW", fatContent: 0.99 },
-          "dairy_product_2" => { source: "DONKEY", "fatContent": 0.89 },
-        }
-      }
-
-      it "checks for string matches" do
-        # These get merged into all the values above
-        default_values = {
-          origin_dairy: "Sugar Hollow Dairy",
-          organic: false,
-          order_by: { direction: "ASC" },
-        }
-
-        expected_input_1 = {
-          source: 1,
-          fat_content: 0.99,
-        }.merge(default_values)
-
-        assert_equal(expected_input_1.sort.to_h, variables["dairy_product_1"].to_h.sort.to_h)
-
-        expected_input_2 = {
-          source: :donkey,
-          fat_content: 0.89,
-        }.merge(default_values)
-        assert_equal(expected_input_2.sort.to_h, variables["dairy_product_2"].to_h.sort.to_h)
-      end
-    end
-
     describe "validating input objects" do
       let(:query_string) {%|
       query searchMyDairy (
@@ -155,9 +97,7 @@ describe GraphQL::Query::Variables do
         }
       |}
       let(:result) {
-        GraphQL::Deprecation.stub(:warn, nil) do
-          schema.execute(query_string, variables: provided_variables, root_value: ObjectWithThingsCount)
-        end
+        schema.execute(query_string, variables: provided_variables, root_value: ObjectWithThingsCount)
       }
 
       describe "when they are present, but null" do
@@ -209,15 +149,19 @@ describe GraphQL::Query::Variables do
 
         query_type = Class.new(GraphQL::Schema::Object) do
           graphql_name "Query"
-          field :variables_test, Integer, null: true, extras: [:ast_node], camelize: false do
+          field :variables_test, Integer, extras: [:ast_node], camelize: false, resolve_static: true do
             argument :val, Integer, required: false
             argument :val_with_default, Integer, required: false, default_value: 13, camelize: false
             argument :complex_val, complex_val, required: false, camelize: false
           end
 
-          def variables_test(ast_node:, **args)
+          def self.variables_test(context, ast_node:, **args)
             context.schema.args_cache[ast_node.alias] = args
             1
+          end
+
+          def variables_test(ast_node:, **args)
+            self.class.variables_test(context, ast_node: ast_node, **args)
           end
         end
 
@@ -227,22 +171,8 @@ describe GraphQL::Query::Variables do
           class << self
             attr_accessor :args_cache
           end
-          # Work around the fact that:
-          # - These tests check for `!intepreter?` behavior
-          # - Previously, these tests used an OpenStruct instead of a real context
-          # - But, now, the context requires `.dataloader.append_job`
-          # - At first I used NullContext, but that doesn't have the `.schema` reference that Variables needs.
-          # - So I built a _real_ context, but that started returning `.interpreter? => true`
-          # - So, update the schema to _really_ be `.interpreter? => false`
-          # When the legacy runtime is removed, so can the tests for that behavior (and the behavior itself.)
-          def args_cache
-            self.class.args_cache
-          end
 
           self.args_cache = args_cache
-          # This tests some coercion behavior that only applies to the legacy runtime:
-          use GraphQL::Execution::Execute
-          use GraphQL::Analysis
         end
       }
 
@@ -290,20 +220,16 @@ describe GraphQL::Query::Variables do
       }
 
       let(:run_query) {
-        GraphQL::Deprecation.stub(:warn, nil) do
-          schema.execute(query_string, variables: provided_variables)
-        end
-      }
-
-      let(:variables) { GraphQL::Query::Variables.new(
-        query_context,
-        ast_variables,
-        provided_variables)
+        schema.execute(query_string, variables: provided_variables)
       }
 
       def assert_has_key_with_value(hash, key, has_key, value)
         assert_equal(has_key, hash.key?(key))
-        assert_equal(value, hash[key])
+        if value.nil?
+          assert_nil hash[key]
+        else
+          assert_equal(value, hash[key])
+        end
       end
 
       it "preserves explicit null" do
@@ -395,9 +321,7 @@ describe GraphQL::Query::Variables do
       end
 
       it "works" do
-        res = GraphQL::Deprecation.stub(:warn, nil) do
-          schema.execute(query_string, variables: params["variables"])
-        end
+        res = schema.execute(query_string, variables: params["variables"])
         assert_equal 1, res["data"]["searchDairy"].length
       end
     end

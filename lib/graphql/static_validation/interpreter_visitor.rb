@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module StaticValidation
     class InterpreterVisitor < BaseVisitor

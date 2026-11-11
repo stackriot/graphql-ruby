@@ -3,6 +3,9 @@ require "spec_helper"
 
 describe GraphQL::Subscriptions::BroadcastAnalyzer do
   class BroadcastTestSchema < GraphQL::Schema
+    LOG_OUTPUT = StringIO.new
+    LOGGER = Logger.new(LOG_OUTPUT)
+    LOGGER.formatter = ->(severity, time, progname, msg) { "#{severity}: #{msg}\n"}
     module Throwable
       include GraphQL::Schema::Interface
       field :weight, Integer, null: false
@@ -10,22 +13,34 @@ describe GraphQL::Subscriptions::BroadcastAnalyzer do
       field :split_broadcastable_test, Boolean, null: false
     end
 
+    class BroadcastableConnection < GraphQL::Types::Relay::BaseConnection
+      default_broadcastable(true)
+    end
+
+    class BroadcastableEdge < GraphQL::Types::Relay::BaseEdge
+      default_broadcastable(true)
+    end
+
     class Javelin < GraphQL::Schema::Object
       implements Throwable
+      edge_type_class(BroadcastableEdge)
+      connection_type_class(BroadcastableConnection)
       field :split_broadcastable_test, Boolean, null: false, broadcastable: false
+      field :length, Integer, broadcastable: true
     end
 
     class Shot < GraphQL::Schema::Object
       implements Throwable
       field :viewer_can_put, Boolean, null: false, broadcastable: false
+      field :diameter, Integer, broadcastable: true
     end
 
     class Query < GraphQL::Schema::Object
-      field :throwable, Throwable, null: true
+      field :throwable, Throwable
     end
 
     class Mutation < GraphQL::Schema::Object
-      field :noop, String, null: true
+      field :noop, String
     end
 
     class Subscription < GraphQL::Schema::Object
@@ -41,6 +56,13 @@ describe GraphQL::Subscriptions::BroadcastAnalyzer do
       end
 
       field :new_max_throw_record, subscription: NewMaxThrowRecord, broadcastable: true
+
+      class NewJavelin < GraphQL::Schema::Subscription
+        field :javelins, Javelin.connection_type, broadcastable: true
+        field :shots, Shot.connection_type, broadcastable: true
+      end
+
+      field :new_javelin, subscription: NewJavelin, broadcastable: true
     end
 
     query(Query)
@@ -48,6 +70,7 @@ describe GraphQL::Subscriptions::BroadcastAnalyzer do
     subscription(Subscription)
     orphan_types(Shot, Javelin)
     use GraphQL::Subscriptions, broadcast: true, default_broadcastable: true
+    default_logger(LOGGER)
   end
 
   # Inheritance doesn't quite work, because the query analyzer is carried over.
@@ -57,17 +80,22 @@ describe GraphQL::Subscriptions::BroadcastAnalyzer do
     subscription(BroadcastTestSchema::Subscription)
     orphan_types(BroadcastTestSchema::Shot, BroadcastTestSchema::Javelin)
     use GraphQL::Subscriptions, broadcast: true, default_broadcastable: false
+    default_logger(BroadcastTestSchema::LOGGER)
   end
-
 
   def broadcastable?(query_str, schema: BroadcastTestSchema)
     schema.subscriptions.broadcastable?(query_str)
   end
 
+  before do
+    BroadcastTestSchema::LOG_OUTPUT.rewind
+    BroadcastTestSchema::LOG_OUTPUT.string.clear
+  end
+
   it "doesn't run for non-subscriptions" do
     assert_nil broadcastable?("{ __typename }")
     assert_nil broadcastable?("mutation { __typename }")
-    assert_equal true, broadcastable?("subscription { __typename }")
+    assert_equal true, broadcastable?("subscription { newMaxThrowRecord { distance } }")
   end
 
   describe "when the default is false" do
@@ -80,7 +108,7 @@ describe GraphQL::Subscriptions::BroadcastAnalyzer do
     end
 
     it "treats introspection fields as broadcastable" do
-      assert_equal true, broadcastable?("subscription { __typename }", schema: BroadcastTestDefaultFalseSchema)
+      assert_equal true, broadcastable?("subscription { newMaxThrowRecord { __typename } }", schema: BroadcastTestDefaultFalseSchema)
     end
   end
 
@@ -92,6 +120,24 @@ describe GraphQL::Subscriptions::BroadcastAnalyzer do
 
     it "returns true no field is tagged false" do
       assert_equal true, broadcastable?("subscription { throwableWasThrown { throwable { weight } } }")
+    end
+  end
+
+  describe "nodes field" do
+    it "can be broadcastable" do
+      query_str = "subscription { newJavelin { javelins { nodes { length } edges { node { length } } pageInfo { hasNextPage } } } }"
+      assert broadcastable?(query_str)
+      assert broadcastable?(query_str, schema: BroadcastTestDefaultFalseSchema)
+    end
+
+    it "follows the default schema setting" do
+      query_str = "subscription { newJavelin { shots { nodes { diameter } edges { node { diameter } } pageInfo { hasNextPage } } } }"
+      assert broadcastable?(query_str)
+      assert_equal BroadcastTestSchema.default_logger, BroadcastTestDefaultFalseSchema.default_logger
+      BroadcastTestSchema::LOG_OUTPUT.string.clear
+      BroadcastTestSchema::LOG_OUTPUT.rewind
+      refute broadcastable?(query_str, schema: BroadcastTestDefaultFalseSchema)
+      assert_equal "DEBUG: `broadcastable: nil` for field: ShotConnection.nodes\n", BroadcastTestSchema::LOG_OUTPUT.string
     end
   end
 
@@ -120,7 +166,7 @@ describe GraphQL::Subscriptions::BroadcastAnalyzer do
         subscription {
           throwableWasThrown {
             throwable {
-              # Although this is false on Javelin, it's not overriden on Shot,
+              # Although this is false on Javelin, it's not overridden on Shot,
               # so it should use the default of `true`
               ...on Shot {
                 splitBroadcastableTest

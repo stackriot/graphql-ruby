@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 require "graphql/pagination/array_connection"
 require "graphql/pagination/active_record_relation_connection"
 require "graphql/pagination/connections"

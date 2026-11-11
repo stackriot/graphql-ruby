@@ -9,6 +9,7 @@ describe GraphQL::Introspection::DirectiveType do
           name,
           args { name, type { kind, name, ofType { name } } },
           locations
+          isRepeatable
           # Deprecated fields:
           onField
           onFragment
@@ -27,7 +28,7 @@ describe GraphQL::Introspection::DirectiveType do
     end
   end
 
-  let(:schema) { Class.new(Dummy::Schema) }
+  let(:schema) { Class.new(Dummy::Schema) { directive(Class.new(GraphQL::Schema::Directive) { graphql_name("doStuff"); repeatable(true) })}}
   let(:result) { schema.execute(query_string) }
   before do
     schema.max_depth(100)
@@ -38,13 +39,52 @@ describe GraphQL::Introspection::DirectiveType do
       "__schema" => {
         "directives" => [
           {
+            "name" => "deprecated",
+            "args" => [
+              {"name"=>"reason", "type"=>{"kind"=>"SCALAR", "name"=>"String", "ofType"=>nil}}
+            ],
+            "locations"=>["FIELD_DEFINITION", "ENUM_VALUE", "ARGUMENT_DEFINITION", "INPUT_FIELD_DEFINITION"],
+            "isRepeatable" => false,
+            "onField" => false,
+            "onFragment" => false,
+            "onOperation" => false,
+          },
+          {
+            "name"=>"directiveForVariableDefinition",
+            "args"=>[],
+            "locations"=>["VARIABLE_DEFINITION"],
+            "isRepeatable"=>false,
+            "onField"=>false,
+            "onFragment"=>false,
+            "onOperation"=>false,
+          },
+          {
+            "name"=>"doStuff",
+            "args"=>[],
+            "locations"=>[],
+            "isRepeatable"=>true,
+            "onField"=>false,
+            "onFragment"=>false,
+            "onOperation"=>false,
+          },
+          {
             "name" => "include",
             "args" => [
               {"name"=>"if", "type"=>{"kind"=>"NON_NULL", "name"=>nil, "ofType"=>{"name"=>"Boolean"}}}
             ],
             "locations"=>["FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT"],
+            "isRepeatable" => false,
             "onField" => true,
             "onFragment" => true,
+            "onOperation" => false,
+          },
+          {
+            "name" => "oneOf",
+            "args" => [],
+            "locations"=>["INPUT_OBJECT"],
+            "isRepeatable" => false,
+            "onField" => false,
+            "onFragment" => false,
             "onOperation" => false,
           },
           {
@@ -53,16 +93,18 @@ describe GraphQL::Introspection::DirectiveType do
               {"name"=>"if", "type"=>{"kind"=>"NON_NULL", "name"=>nil, "ofType"=>{"name"=>"Boolean"}}}
             ],
             "locations"=>["FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT"],
+            "isRepeatable" => false,
             "onField" => true,
             "onFragment" => true,
             "onOperation" => false,
           },
           {
-            "name" => "deprecated",
+            "name" => "specifiedBy",
             "args" => [
-              {"name"=>"reason", "type"=>{"kind"=>"SCALAR", "name"=>"String", "ofType"=>nil}}
+              {"name"=>"url", "type"=>{"kind"=>"NON_NULL", "name"=>nil, "ofType"=>{"name"=>"String"}}}
             ],
-            "locations"=>["FIELD_DEFINITION", "ENUM_VALUE", "ARGUMENT_DEFINITION", "INPUT_FIELD_DEFINITION"],
+            "locations"=>["SCALAR"],
+            "isRepeatable" => false,
             "onField" => false,
             "onFragment" => false,
             "onOperation" => false,
@@ -70,7 +112,7 @@ describe GraphQL::Introspection::DirectiveType do
         ]
       }
     }}
-    assert_equal(expected, result)
+    assert_equal(expected, result.to_h)
   end
 
   it "hides deprecated arguments by default" do
@@ -80,8 +122,8 @@ describe GraphQL::Introspection::DirectiveType do
         __schema {
           directives {
             name
-            args { 
-              name 
+            args {
+              name
             }
           }
         }
@@ -102,7 +144,7 @@ describe GraphQL::Introspection::DirectiveType do
         __schema {
           directives {
             name
-            args(includeDeprecated: true) { 
+            args(includeDeprecated: true) {
               name
               isDeprecated
               deprecationReason

@@ -1,14 +1,6 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Type Definitions
-title: Enums
-desc: Enums are sets of discrete values
-index: 2
----
+# Enums
 
-Enum types are sets of discrete values. An enum field must return one of the possible values of the enum. In the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#type-language) (SDL), enums are described like this:
+Enum types are sets of discrete values. An enum field must return one of the possible values of the enum. In the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#enum-types) (SDL), enums are described like this:
 
 ```ruby
 enum MediaCategory {
@@ -39,11 +31,11 @@ params["variables"]
 
 ## Defining Enum Types
 
-In your application, enums extend {{ "GraphQL::Schema::Enum" | api_doc }} and define values with the `value(...)` method:
+In your application, enums extend [GraphQL::Schema::Enum](rdoc-ref:GraphQL::Schema::Enum) and define values with the `value(...)` method:
 
 ```ruby
 # First, a base class
-# app/graphql/types/base_enum
+# app/graphql/types/base_enum.rb
 class Types::BaseEnum < GraphQL::Schema::Enum
 end
 
@@ -59,6 +51,7 @@ end
 Each value may have:
 
 - A description (as the second argument or `description:` keyword)
+- A comment (as a `comment:` keyword)
 - A deprecation reason (as `deprecation_reason:`), marking this value as deprecated
 - A corresponding Ruby value (as `value:`), see below
 
@@ -71,3 +64,25 @@ value "AUDIO", value: :audio
 Then, GraphQL inputs of `AUDIO` will be converted to `:audio` and Ruby values of `:audio` will be converted to `"AUDIO"` in GraphQL responses.
 
 Enum classes are never instantiated and their methods are never called.
+
+You can get the GraphQL name of the enum value using the method matching its downcased name:
+
+```ruby
+Types::MediaCategory.audio # => "AUDIO"
+```
+
+You can pass a `value_method:` to override the value of the generated method:
+
+```ruby
+value "AUDIO", value: :audio, value_method: :lo_fi_audio
+
+# ...
+
+Types::MediaCategory.lo_fi_audio # => "AUDIO"
+```
+
+Also, you can completely skip the method generation by setting `value_method` to `false`
+
+```ruby
+value "AUDIO", value: :audio, value_method: false
+```

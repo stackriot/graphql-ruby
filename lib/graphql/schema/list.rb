@@ -1,29 +1,41 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   class Schema
     # Represents a list type in the schema.
-    # Wraps a {Schema::Member} as a list type.
-    # @see {Schema::Member::TypeSystemHelpers#to_list_type}
+    # Wraps a [Schema::Member](rdoc-ref:Schema::Member) as a list type.
+    # See [Schema::Member::TypeSystemHelpers#to_list_type](rdoc-ref:Schema::Member::TypeSystemHelpers#to_list_type) Create a list type from another GraphQL type
     class List < GraphQL::Schema::Wrapper
       include Schema::Member::ValidatesInput
 
-      def to_graphql
-        @of_type.graphql_definition.to_list_type
-      end
-
-      # @return [GraphQL::TypeKinds::LIST]
+      # **Returns**
+      #
+      # - `GraphQL::TypeKinds::LIST`
+      #
+      # :call-seq:
+      #   kind() -> GraphQL::TypeKinds::LIST
       def kind
         GraphQL::TypeKinds::LIST
       end
 
-      # @return [true]
+      # **Returns**
+      #
+      # - `true`
+      #
+      # :call-seq:
+      #   list?() -> true
       def list?
         true
       end
 
       def to_type_signature
-        "[#{@of_type.to_type_signature}]"
+        @type_signature ||= -"[#{@of_type.to_type_signature}]"
+      end
+
+      def authorizes?(ctx)
+        of_type.authorizes?(ctx)
       end
 
       # This is for introspection, where it's expected the name will be `null`
@@ -49,15 +61,24 @@ module GraphQL
         end
       end
 
-      def validate_non_null_input(value, ctx)
+      def validate_non_null_input(value, ctx, max_errors: nil)
         result = GraphQL::Query::InputValidationResult.new
         ensure_array(value).each_with_index do |item, index|
           item_result = of_type.validate_input(item, ctx)
-          if !item_result.valid?
+          unless item_result.valid?
+            if max_errors
+              if max_errors == 0
+                add_max_errors_reached_message(result)
+                break
+              end
+
+              max_errors -= 1
+            end
+
             result.merge_result!(index, item_result)
           end
         end
-        result
+        result.valid? ? nil : result
       end
 
       private
@@ -69,6 +90,12 @@ module GraphQL
         else
           [value]
         end
+      end
+
+      def add_max_errors_reached_message(result)
+        message = "Too many errors processing list variable, max validation error limit reached. Execution aborted"
+        item_result = GraphQL::Query::InputValidationResult.from_problem(message)
+        result.merge_result!(nil, item_result)
       end
     end
   end

@@ -16,8 +16,12 @@ describe GraphQL::StaticValidation::Validator do
         validator.validate(query)
       end
 
-      assert_equal 3, traces.length
-      _lex_trace, _parse_trace, validate_trace = traces
+      if USING_C_PARSER
+        assert_equal 3, traces.length
+      else
+        assert_equal 2, traces.length
+      end
+      validate_trace = traces.last
       assert_equal "validate", validate_trace[:key]
       assert_equal true, validate_trace[:validate]
       assert_instance_of GraphQL::Query, validate_trace[:query]
@@ -27,7 +31,7 @@ describe GraphQL::StaticValidation::Validator do
 
   describe "error format" do
     let(:query_string) { "{ cheese(id: $undefinedVar) { source } }" }
-    let(:document) { GraphQL.parse_with_racc(query_string, filename: "not_a_real.graphql") }
+    let(:document) { GraphQL.parse(query_string, filename: "not_a_real.graphql") }
     let(:query) { GraphQL::Query.new(Dummy::Schema, nil, document: document) }
 
     it "includes message, locations, and fields keys" do
@@ -42,8 +46,6 @@ describe GraphQL::StaticValidation::Validator do
   end
 
   describe "validation order" do
-    let(:document) { GraphQL.parse(query_string)}
-
     describe "fields & arguments" do
       let(:query_string) { %|
         query getCheese($id: Int!) {
@@ -202,6 +204,33 @@ describe GraphQL::StaticValidation::Validator do
 
     it "runs the specified rules" do
       assert_equal 0, errors.size
+    end
+  end
+
+  describe "a hand-built document that uses one input object node twice" do
+    let(:item) {
+      GraphQL::Language::Nodes::InputObject.new(
+        arguments: [GraphQL::Language::Nodes::Argument.new(name: "fatContent", value: 1.2)],
+      )
+    }
+    let(:document) {
+      field = GraphQL::Language::Nodes::Field.new(
+        field_alias: "dupes",
+        name: "searchDairy",
+        arguments: [GraphQL::Language::Nodes::Argument.new(name: "product", value: [item, item])],
+        selections: [GraphQL::Language::Nodes::Field.new(name: "__typename")],
+      )
+      GraphQL::Language::Nodes::Document.new(
+        definitions: [GraphQL::Language::Nodes::OperationDefinition.new(operation_type: "query", selections: [field])],
+      )
+    }
+    let(:query) { GraphQL::Query.new(Dummy::Schema, nil, document: document) }
+
+    it "reports the first position for both occurrences" do
+      assert_equal([
+        ["query", "dupes", "product", 0, "source"],
+        ["query", "dupes", "product", 0, "source"],
+      ], errors.map { |err| err["path"] })
     end
   end
 end

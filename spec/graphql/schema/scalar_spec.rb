@@ -25,20 +25,18 @@ describe GraphQL::Schema::Scalar do
       assert_equal "B♭", res["data"]["find"]["favoriteKey"]
     end
 
-    if TESTING_INTERPRETER
-      it "handles infinity values" do
-        query_str = <<-GRAPHQL
-        {
-          find(id: 9999e9999) {
-            __typename
-          }
+    it "handles infinity values" do
+      query_str = <<-GRAPHQL
+      {
+        find(id: 9999.0e9999) {
+          __typename
         }
-        GRAPHQL
+      }
+      GRAPHQL
 
-        res = Jazz::Schema.execute(query_str)
-        expected_errors = ["Argument 'id' on Field 'find' has an invalid value. Expected type 'ID!'."]
-        assert_equal expected_errors, res["errors"].map { |e| e["message"] }
-      end
+      res = Jazz::Schema.execute(query_str)
+      expected_errors = ["Argument 'id' on Field 'find' has an invalid value. Expected type 'ID!'."]
+      assert_equal expected_errors, res["errors"].map { |e| e["message"] }
     end
 
     it "can be input" do
@@ -121,18 +119,30 @@ describe GraphQL::Schema::Scalar do
         def self.coerce_input(val, ctx)
           raise GraphQL::CoercionError, "#{val.inspect} can't be Custom value"
         end
+
+        def self.coerce_result(val, ctx)
+          raise GraphQL::CoercionError, "#{val.inspect} can't be Custom value"
+        end
       end
 
       class Query < GraphQL::Schema::Object
-        field :f1, String, null: true do
-          argument :arg, CustomScalar, required: true
+        field :f1, String do
+          argument :arg, CustomScalar
+        end
+
+        field :f2, CustomScalar, resolve_static: true
+
+        def self.f2(_c); "bad"; end
+
+        def f2
+          "bad"
         end
       end
 
       query(Query)
     end
 
-    it "makes a nice validation error" do
+    it "makes a nice validation error for input coercion" do
       result = CoercionErrorSchema.execute("{ f1(arg: \"a\") }")
       expected_error = {
         "message" => "\"a\" can't be Custom value",
@@ -145,11 +155,20 @@ describe GraphQL::Schema::Scalar do
       }
       assert_equal [expected_error], result["errors"]
     end
+
+    it "makes a nice validation error for reuslt coercion" do
+      result = CoercionErrorSchema.execute("{ f2 }")
+      expected_error = {
+        "message" => "\"bad\" can't be Custom value",
+        "locations" => [{"line"=>1, "column"=>3}],
+        "path" => ["f2"],
+      }
+      assert_equal [expected_error], result["errors"]
+    end
   end
 
-
   describe "validate_input with good input" do
-    let(:result) { GraphQL::Types::Int.validate_input(150, GraphQL::Query::NullContext) }
+    let(:result) { GraphQL::Types::Int.validate_input(150, GraphQL::Query::NullContext.instance) }
 
     it "returns a valid result" do
       assert(result.valid?)
@@ -157,7 +176,7 @@ describe GraphQL::Schema::Scalar do
   end
 
   describe "validate_input with bad input" do
-    let(:result) { GraphQL::Types::Int.validate_input("bad num", GraphQL::Query::NullContext) }
+    let(:result) { GraphQL::Types::Int.validate_input("bad num", GraphQL::Query::NullContext.instance) }
 
     it "returns an invalid result for bad input" do
       assert(!result.valid?)
@@ -196,7 +215,7 @@ describe GraphQL::Schema::Scalar do
     end
 
     it "coerces nil into nil" do
-      assert_equal(nil, custom_scalar.coerce_isolated_input(nil))
+      assert_nil(custom_scalar.coerce_isolated_input(nil))
     end
 
     it "coerces input into objects" do
@@ -208,12 +227,45 @@ describe GraphQL::Schema::Scalar do
     end
 
     describe "custom scalar errors" do
-      let(:result) { custom_scalar.validate_input("xyz", GraphQL::Query::NullContext) }
+      let(:result) { custom_scalar.validate_input("xyz", GraphQL::Query::NullContext.instance) }
 
       it "returns an invalid result" do
         assert !result.valid?
         assert_equal 'Could not coerce value "xyz" to BigInt', result.problems[0]["explanation"]
       end
     end
+  end
+
+  it "handles coercing null" do
+    class CoerceNullSchema < GraphQL::Schema
+      class CustomScalar < GraphQL::Schema::Scalar
+        class << self
+          def coerce_input(input_value, _context)
+            raise GraphQL::CoercionError, "Invalid value: #{input_value.inspect}"
+          end
+        end
+      end
+
+      class QueryType < GraphQL::Schema::Object
+        field :hello, String, resolve_static: true do
+          argument :input, CustomScalar, required: false
+        end
+
+        def self.hello(context, input: nil)
+          "hello world"
+        end
+
+        def hello(input: nil)
+          "hello world"
+        end
+      end
+
+      query(QueryType)
+    end
+    result = CoerceNullSchema.execute('{ hello(input: 5) }')
+    assert_equal(["Invalid value: 5"], result["errors"].map { |err| err["message"] })
+
+    null_input_result = CoerceNullSchema.execute('{ hello(input: null) }')
+    assert_equal(["Invalid value: nil"], null_input_result["errors"].map { |err| err["message"] })
   end
 end

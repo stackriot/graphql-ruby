@@ -1,25 +1,22 @@
 # frozen_string_literal: true
-require_relative "./query_complexity"
+#--
+# typed: strict
 module GraphQL
   module Analysis
     # Used under the hood to implement complexity validation,
-    # see {Schema#max_complexity} and {Query#max_complexity}
-    #
-    # @example Assert max complexity of 10
-    #   # DON'T actually do this, graphql-ruby
-    #   # Does this for you based on your `max_complexity` setting
-    #   MySchema.query_analyzers << GraphQL::Analysis::MaxQueryComplexity.new(10)
-    #
-    class MaxQueryComplexity < GraphQL::Analysis::QueryComplexity
-      def initialize(max_complexity)
-        disallow_excessive_complexity = ->(query, complexity) {
-          if complexity > max_complexity
-            GraphQL::AnalysisError.new("Query has complexity of #{complexity}, which exceeds max complexity of #{max_complexity}")
-          else
-            nil
-          end
-        }
-        super(&disallow_excessive_complexity)
+    # See [Schema.max_complexity](rdoc-ref:GraphQL::Schema.max_complexity) and `Query#max_complexity`.
+    class MaxQueryComplexity < QueryComplexity
+      #: -> GraphQL::AnalysisError?
+      def result
+        return if subject.max_complexity.nil?
+
+        total_complexity = super
+
+        if total_complexity > subject.max_complexity
+          GraphQL::AnalysisError.new("Query has complexity of #{total_complexity}, which exceeds max complexity of #{subject.max_complexity}")
+        else
+          nil
+        end
       end
     end
   end

@@ -1,4 +1,4 @@
-import { createAblyHandler } from "../createAblyHandler"
+import { OnErrorData, createAblyHandler } from "../createAblyHandler"
 import { Realtime, Types } from "ably"
 
 const dummyOperation = { text: "", name: "" }
@@ -185,6 +185,41 @@ describe("createAblyHandler", () => {
     expect(nextInvokedWith).toBeUndefined()
   })
 
+  it("doesn't dispatch anything for an empty data object", async () => {
+    let errorInvokedWith = undefined
+    let nextInvokedWith = undefined
+
+    const producer = createAblyHandler({
+      fetchOperation: () =>
+        new Promise(resolve =>
+          resolve({
+            headers: new Map([["X-Subscription-ID", "foo"]]),
+            body: { data: {} }
+          })
+        ),
+      ably: createDummyConsumer()
+    })
+
+    producer(
+      dummyOperation,
+      {},
+      {},
+      {
+        onError: (errors: any) => {
+          errorInvokedWith = errors
+        },
+        onNext: (response: any) => {
+          nextInvokedWith = response
+        },
+        onCompleted: () => {}
+      }
+    )
+
+    await nextTick()
+    expect(errorInvokedWith).toBeUndefined()
+    expect(nextInvokedWith).toBeUndefined()
+  })
+
   it("dispatches caught errors", async () => {
     let errorInvokedWith = undefined
     let nextInvokedWith = undefined
@@ -262,7 +297,7 @@ describe("createAblyHandler", () => {
         key: "integration-test:invalid",
         log: { level: 0 }
       })
-      await new Promise(resolve => {
+      await new Promise<void>(resolve => {
         const fetchOperation = async () => ({
           headers: new Map([["X-Subscription-ID", "foo"]])
         })
@@ -272,7 +307,7 @@ describe("createAblyHandler", () => {
         const variables = {}
         const cacheConfig = {}
         const onError = (error: any) => {
-          expect(error.message).toMatch(/Invalid key in request/)
+          expect(error.message).toEqual("unable to handle request; no application id found in request")
           resolve()
         }
         const onNext = () => console.log("onNext")
@@ -293,7 +328,7 @@ describe("createAblyHandler", () => {
       "onError is called for too many subscriptions",
       async () => {
         const ably = new Realtime({ key, log: { level: 0 } })
-        await new Promise(resolve => {
+        await new Promise<void>(resolve => {
           let subscriptionCounter = 0
           const fetchOperation = async () => {
             subscriptionCounter += 1
@@ -348,7 +383,7 @@ describe("createAblyHandler", () => {
       const operation = {}
       const variables = {}
       const cacheConfig = {}
-      const onError = (error: Error) => {
+      const onError = (error: OnErrorData) => {
         caughtError = error
       }
       const onNext = () => {}
@@ -373,7 +408,7 @@ describe("createAblyHandler", () => {
       }
       await Promise.all(disposals)
 
-      // 201st subscription - should work now that previous 200 subscriptions have been diposed
+      // 201st subscription - should work now that previous 200 subscriptions have been disposed
       const { dispose } = ablyHandler(
         operation,
         variables,
@@ -406,7 +441,7 @@ describe("createAblyHandler", () => {
         const operation = {}
         const variables = {}
         const cacheConfig = {}
-        const onError = (error: Error) => {
+        const onError = (error: OnErrorData) => {
           caughtError = error
         }
         const messages: any[] = []
@@ -421,7 +456,7 @@ describe("createAblyHandler", () => {
         }
 
         // Publish before subscribe
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
           const ablyPublisher = new Realtime({ key, log: { level: 0 } })
           const publishChannel = ablyPublisher.channels.get(subscriptionId)
           publishChannel.publish(

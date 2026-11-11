@@ -25,23 +25,17 @@ describe GraphQL::StaticValidation::VariableDefaultValuesAreCorrectlyTyped do
   it "finds default values that don't match their types" do
     expected = [
       {
-        "message"=>"Default value for $badInt doesn't match type Int",
+        "message"=>"Could not coerce value \"abc\" to Int",
         "locations"=>[{"line"=>5, "column"=>7}],
         "path"=>["query getCheese"],
         "extensions"=>{"code"=>"defaultValueInvalidType", "variableName"=>"badInt", "typeName"=>"Int"}
       },
       {
-        "message"=>"Default value for $badInput doesn't match type DairyProductInput",
+        "message"=>"Could not coerce value true to Float",
         "locations"=>[{"line"=>7, "column"=>7}],
         "path"=>["query getCheese"],
         "extensions"=>{"code"=>"defaultValueInvalidType", "variableName"=>"badInput", "typeName"=>"DairyProductInput"}
       },
-      {
-        "message"=>"Non-null variable $nonNull can't have a default value",
-        "locations"=>[{"line"=>8, "column"=>7}],
-        "path"=>["query getCheese"],
-        "extensions"=>{"code"=>"defaultValueInvalidOnNonNullVariable", "variableName"=>"nonNull"}
-      }
     ]
     assert_equal(expected, errors)
   end
@@ -55,7 +49,7 @@ describe GraphQL::StaticValidation::VariableDefaultValuesAreCorrectlyTyped do
 
     assert_equal false, res.key?("data")
     assert_equal 1, res["errors"].length
-    assert_equal "IDX isn't a defined input type (on $msg)", res["errors"][0]["message"]
+    assert_equal "IDX isn't a defined input type (on $msg) (Did you mean `ID`?)", res["errors"][0]["message"]
   end
 
   describe "null default values" do
@@ -115,16 +109,16 @@ describe GraphQL::StaticValidation::VariableDefaultValuesAreCorrectlyTyped do
       it "finds errors" do
         expected = [
           {
-            "message"=>"Non-null variable $a can't have a default value",
+            "message"=>"Default value for $a doesn't match type Int!",
             "locations"=>[{"line"=>3, "column"=>11}],
             "path"=>["query getCheese"],
-            "extensions"=>{"code"=>"defaultValueInvalidOnNonNullVariable", "variableName"=>"a"}
+            "extensions"=> {"code"=>"defaultValueInvalidType", "variableName"=>"a", "typeName"=>"Int!"}
           },
           {
-            "message"=>"Non-null variable $b can't have a default value",
+            "message"=>"Default value for $b doesn't match type String!",
             "locations"=>[{"line"=>4, "column"=>11}],
             "path"=>["query getCheese"],
-            "extensions"=>{"code"=>"defaultValueInvalidOnNonNullVariable", "variableName"=>"b"}
+            "extensions"=>{"code"=>"defaultValueInvalidType", "variableName"=>"b", "typeName"=>"String!"}
           },
           {
             "message"=>"Default value for $c doesn't match type ComplexInput",
@@ -133,7 +127,6 @@ describe GraphQL::StaticValidation::VariableDefaultValuesAreCorrectlyTyped do
             "extensions"=>{"code"=>"defaultValueInvalidType", "variableName"=>"c", "typeName"=>"ComplexInput"}
           }
         ]
-
         assert_equal expected, errors
       end
     end
@@ -155,11 +148,10 @@ describe GraphQL::StaticValidation::VariableDefaultValuesAreCorrectlyTyped do
         end
       end
 
-
       class Query < GraphQL::Schema::Object
         description "The query root of this schema"
 
-        field :time, TimeType, null: true do
+        field :time, TimeType do
           argument :value, TimeType, required: false
         end
 

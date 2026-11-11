@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 require "spec_helper"
-require "graphql/types/iso_8601_date_time"
+
 describe GraphQL::Types::ISO8601DateTime do
   module DateTimeTest
     class DateTimeObject < GraphQL::Schema::Object
@@ -10,55 +10,74 @@ describe GraphQL::Types::ISO8601DateTime do
       field :hour, Integer, null: false
       field :minute, Integer, method: :min, null: false
       field :second, Integer, method: :sec, null: false
-      field :zone, String, null: true
+      field :zone, String
       field :utc_offset, Integer, null: false
       field :iso8601, GraphQL::Types::ISO8601DateTime, null: false, method: :itself
     end
 
     class Query < GraphQL::Schema::Object
-      field :parse_date, DateTimeObject, null: true do
-        argument :date, GraphQL::Types::ISO8601DateTime, required: true
+      field :parse_date, DateTimeObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601DateTime
       end
 
-      field :parse_date_time, DateTimeObject, null: true do
-        argument :date, GraphQL::Types::ISO8601DateTime, required: true
+      field :parse_date_time, DateTimeObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601DateTime
       end
 
-      field :parse_date_string, DateTimeObject, null: true do
-        argument :date, GraphQL::Types::ISO8601DateTime, required: true
+      field :parse_date_string, DateTimeObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601DateTime
       end
 
-      field :parse_date_time_string, DateTimeObject, null: true do
-        argument :date, GraphQL::Types::ISO8601DateTime, required: true
+      field :parse_date_time_string, DateTimeObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601DateTime
       end
 
-      field :invalid_date, DateTimeObject, null: false
+      field :invalid_date, DateTimeObject, null: false, resolve_static: true
 
-      def parse_date(date:)
+      def self.parse_date(context, date:)
         # Resolve a Date object
         Date.parse(date.iso8601)
       end
 
-      def parse_date_time(date:)
+      def parse_date(date:)
+        self.class.parse_date(context, date: date)
+      end
+
+      def self.parse_date_time(context, date:)
         # Resolve a Time object
         Time.parse(date.iso8601(3))
       end
 
-      def parse_date_string(date:)
+      def parse_date_time(date:)
+        self.class.parse_date_time(context, date: date)
+      end
+
+      def self.parse_date_string(context, date:)
         # Resolve a Date string
         Date.parse(date.iso8601).iso8601
       end
 
-      def parse_date_time_string(date:)
+      def parse_date_string(date:)
+        self.class.parse_date_string(context, date: date)
+      end
+
+      def self.parse_date_time_string(context, date:)
         # Resolve a DateTime string
         DateTime.parse(date.iso8601).iso8601
       end
 
-      def invalid_date
+      def parse_date_time_string(date:)
+        self.class.parse_date_time_string(context, date: date)
+      end
+
+      def self.invalid_date(context)
         'abc'
       end
-    end
 
+      def invalid_date
+        self.class.invalid_date(context)
+      end
+    end
 
     class Schema < GraphQL::Schema
       query(Query)
@@ -89,6 +108,7 @@ describe GraphQL::Types::ISO8601DateTime do
 
     it "parses valid dates" do
       res = parse_date("2018-06-07T09:31:42-07:00")
+      system_zone = Time.iso8601("2018-06-07T09:31:42-07:00").zone
       expected_res = {
         "year" => 2018,
         "month" => 6,
@@ -96,7 +116,7 @@ describe GraphQL::Types::ISO8601DateTime do
         "hour" => 9,
         "minute" => 31,
         "second" => 42,
-        "zone" => nil,
+        "zone" => system_zone,
         "utcOffset" => -25200,
       }
       assert_equal(expected_res, res)
@@ -133,6 +153,30 @@ describe GraphQL::Types::ISO8601DateTime do
         "utcOffset" => system_default_offset,
       }
       assert_equal(expected_res, res)
+    end
+
+    it "parses dates without times or dashes" do
+      res = parse_date("20180827")
+      # It uses the system default timezone when none is given
+      system_default_tz = Date.iso8601("2018-08-27").to_time.zone
+      system_default_offset = Date.iso8601("2018-08-27").to_time.utc_offset
+      expected_res = {
+        "year" => 2018,
+        "month" => 8,
+        "day" => 27,
+        "hour" => 0,
+        "minute" => 0,
+        "second" => 0,
+        "zone" => system_default_tz,
+        "utcOffset" => system_default_offset,
+      }
+      assert_equal(expected_res, res)
+    end
+
+    it "rejects partial times" do
+      expected_errors = ["Variable $date of type ISO8601DateTime! was provided invalid value"]
+      assert_equal expected_errors, parse_date("2018-06-07T12:12").map { |e| e["message"] }
+      assert_equal expected_errors, parse_date("2018-06-07T12").map { |e| e["message"] }
     end
 
     it "adds an error for invalid dates" do
@@ -236,7 +280,8 @@ describe GraphQL::Types::ISO8601DateTime do
         err = assert_raises(GraphQL::Error) do
           DateTimeTest::Schema.execute(query_str)
         end
-        assert_equal err.message, 'An incompatible object (String) was given to GraphQL::Types::ISO8601DateTime. Make sure that only Times, Dates, DateTimes, and well-formatted Strings are used with this type. (no time information in "abc")'
+        expected_message = exec_next_error_message "DateTimeObject.iso8601", 'An incompatible object (String) was given to GraphQL::Types::ISO8601DateTime. Make sure that only Times, Dates, DateTimes, and well-formatted Strings are used with this type. (no time information in "abc")'
+        assert_equal expected_message, err.message
       end
     end
   end
@@ -253,7 +298,7 @@ describe GraphQL::Types::ISO8601DateTime do
       GRAPHQL
 
       expected_res = { "name" => "ISO8601DateTime", "kind" => "SCALAR"}
-      assert_equal expected_res, introspection_res["data"]["__type"]
+      assert_graphql_equal expected_res, introspection_res["data"]["__type"]
     end
   end
 end

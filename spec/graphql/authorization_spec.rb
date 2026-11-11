@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 require "spec_helper"
 
-describe GraphQL::Authorization do
+describe "GraphQL::Authorization" do
   module AuthTest
     class Box
       attr_reader :value
@@ -13,10 +13,6 @@ describe GraphQL::Authorization do
     class BaseArgument < GraphQL::Schema::Argument
       def visible?(context)
         super && (context[:hide] ? @name != "hidden" : true)
-      end
-
-      def accessible?(context)
-        super && (context[:hide] ? @name != "inaccessible" : true)
       end
 
       def authorized?(parent_object, value, context)
@@ -35,35 +31,21 @@ describe GraphQL::Authorization do
     end
 
     class BaseField < GraphQL::Schema::Field
-      def initialize(*args, edge_class: nil, **kwargs, &block)
-        @edge_class = edge_class
-        super(*args, **kwargs, &block)
-      end
-
-      def to_graphql
-        field_defn = super
-        if @edge_class
-          field_defn.edge_class = @edge_class
-        end
-        field_defn
-      end
-
       argument_class BaseArgument
+
       def visible?(context)
         super && (context[:hide] ? @name != "hidden" : true)
-      end
-
-      def accessible?(context)
-        super && (context[:hide] ? @name != "inaccessible" : true)
       end
 
       def authorized?(object, args, context)
         if object == :raise
           raise GraphQL::UnauthorizedFieldError.new("raised authorized field error", object: object)
         end
-        return Box.new(value: context[:lazy_field_authorized]) if context.key?(:lazy_field_authorized)
-
-        super && object != :hide && object != :replace
+        if context.key?(:lazy_field_authorized)
+          Box.new(value: context[:lazy_field_authorized])
+        else
+          super && object != :hide && object != :replace
+        end
       end
     end
 
@@ -84,6 +66,10 @@ describe GraphQL::Authorization do
       def visible?(context)
         super && (context[:hide] ? @role != :hidden : true)
       end
+
+      def authorized?(context)
+        super && (context[:authorized] ? true : @role != :unauthorized)
+      end
     end
 
     class BaseEnum < GraphQL::Schema::Enum
@@ -93,18 +79,25 @@ describe GraphQL::Authorization do
     module HiddenInterface
       include BaseInterface
 
-      def self.visible?(ctx)
-        super && !ctx[:hide]
-      end
+      definition_methods do
+        def visible?(ctx)
+          super && !ctx[:hide]
+        end
 
-      def self.resolve_type(obj, ctx)
-        HiddenObject
+        def resolve_type(obj, ctx)
+          HiddenObject
+        end
       end
     end
 
     module HiddenDefaultInterface
-      include BaseInterface
-      # visible? will call the super method
+      if GraphQL::Schema.use_visibility_profile?
+        include HiddenInterface
+      else
+        # Warden will detect no possible types
+        include BaseInterface
+      end
+
       def self.resolve_type(obj, ctx)
         HiddenObject
       end
@@ -117,7 +110,7 @@ describe GraphQL::Authorization do
         super && !ctx[:hide]
       end
 
-      field :some_field, String, null: true
+      field :some_field, String
     end
 
     class RelayObject < BaseObject
@@ -125,49 +118,11 @@ describe GraphQL::Authorization do
         super && !ctx[:hidden_relay]
       end
 
-      def self.accessible?(ctx)
-        super && !ctx[:inaccessible_relay]
-      end
-
       def self.authorized?(_val, ctx)
         super && !ctx[:unauthorized_relay]
       end
 
-      field :some_field, String, null: true
-    end
-
-    # TODO test default behavior for abstract types,
-    # that they check their concrete types
-    module InaccessibleInterface
-      include BaseInterface
-
-      def self.accessible?(ctx)
-        super && !ctx[:hide]
-      end
-
-      def self.resolve_type(obj, ctx)
-        InaccessibleObject
-      end
-    end
-
-    module InaccessibleDefaultInterface
-      include BaseInterface
-      # accessible? will call the super method
-      def self.resolve_type(obj, ctx)
-        InaccessibleObject
-      end
-
-      field :some_field, String, null: true
-    end
-
-    class InaccessibleObject < BaseObject
-      implements InaccessibleInterface
-      implements InaccessibleDefaultInterface
-      def self.accessible?(ctx)
-        super && !ctx[:hide]
-      end
-
-      field :some_field, String, null: true
+      field :some_field, String
     end
 
     class UnauthorizedObject < BaseObject
@@ -240,7 +195,7 @@ describe GraphQL::Authorization do
     # but if its replacement value is used, it gives `replaced => true`
     class Replaceable
       def replacement
-        { replaced: true }
+        OpenStruct.new(replaced: true)
       end
 
       def replaced
@@ -259,7 +214,7 @@ describe GraphQL::Authorization do
     class LandscapeFeature < BaseEnum
       value "MOUNTAIN"
       value "STREAM", role: :unauthorized
-      value "FIELD", role: :inaccessible
+      value "FIELD"
       value "TAR_PIT", role: :hidden
     end
 
@@ -269,11 +224,10 @@ describe GraphQL::Authorization do
       end
 
       field :hidden, Integer, null: false
-      field :unauthorized, Integer, null: true, method: :itself
-      field :int2, Integer, null: true do
+      field :unauthorized, Integer, method: :itself
+      field :int2, Integer, resolve_legacy_instance_method: true do
         argument :int, Integer, required: false
         argument :hidden, Integer, required: false
-        argument :inaccessible, Integer, required: false
         argument :unauthorized, Integer, required: false
       end
 
@@ -281,7 +235,7 @@ describe GraphQL::Authorization do
         args[:unauthorized] || 1
       end
 
-      field :landscape_feature, LandscapeFeature, null: false do
+      field :landscape_feature, LandscapeFeature, resolve_legacy_instance_method: true, null: false do
         argument :string, String, required: false
         argument :enum, LandscapeFeature, required: false
       end
@@ -290,7 +244,7 @@ describe GraphQL::Authorization do
         string || enum
       end
 
-      field :landscape_features, [LandscapeFeature], null: false do
+      field :landscape_features, [LandscapeFeature], null: false, resolve_legacy_instance_method: true do
         argument :strings, [String], required: false
         argument :enums, [LandscapeFeature], required: false
       end
@@ -300,22 +254,15 @@ describe GraphQL::Authorization do
       end
 
       def empty_array; []; end
-      field :hidden_object, HiddenObject, null: false, resolver_method: :itself
-      field :hidden_interface, HiddenInterface, null: false, resolver_method: :itself
-      field :hidden_default_interface, HiddenDefaultInterface, null: false, resolver_method: :itself
-      field :hidden_connection, RelayObject.connection_type, null: :false, resolver_method: :empty_array
-      field :hidden_edge, RelayObject.edge_type, null: :false, resolver_method: :edge_object
+      field :hidden_object, HiddenObject, null: false, resolver_method: :itself, resolve_legacy_instance_method: :itself
+      field :hidden_interface, HiddenInterface, null: false, resolver_method: :itself, resolve_legacy_instance_method: :itself
+      field :hidden_default_interface, HiddenDefaultInterface, null: false, resolver_method: :itself, resolve_legacy_instance_method: :itself
+      field :hidden_connection, RelayObject.connection_type, null: :false, resolver_method: :empty_array, resolve_legacy_instance_method: :empty_array
+      field :hidden_edge, RelayObject.edge_type, null: :false, resolver_method: :edge_object, resolve_legacy_instance_method: :edge_object
 
-      field :inaccessible, Integer, null: false, method: :object_id
-      field :inaccessible_object, InaccessibleObject, null: false, resolver_method: :itself
-      field :inaccessible_interface, InaccessibleInterface, null: false, resolver_method: :itself
-      field :inaccessible_default_interface, InaccessibleDefaultInterface, null: false, resolver_method: :itself
-      field :inaccessible_connection, RelayObject.connection_type, null: :false, resolver_method: :empty_array
-      field :inaccessible_edge, RelayObject.edge_type, null: :false, resolver_method: :edge_object
-
-      field :unauthorized_object, UnauthorizedObject, null: true, resolver_method: :itself
-      field :unauthorized_connection, RelayObject.connection_type, null: false, resolver_method: :array_with_item
-      field :unauthorized_edge, RelayObject.edge_type, null: false, resolver_method: :edge_object
+      field :unauthorized_object, UnauthorizedObject, resolver_method: :itself, resolve_legacy_instance_method: :itself
+      field :unauthorized_connection, RelayObject.connection_type, null: false, resolver_method: :array_with_item, resolve_legacy_instance_method: :array_with_item
+      field :unauthorized_edge, RelayObject.edge_type, null: false, resolver_method: :edge_object, resolve_legacy_instance_method: :edge_object
 
       def edge_object
         OpenStruct.new(node: 100)
@@ -325,45 +272,45 @@ describe GraphQL::Authorization do
         [1]
       end
 
-      field :unauthorized_lazy_box, UnauthorizedBox, null: true do
-        argument :value, String, required: true
+      field :unauthorized_lazy_box, UnauthorizedBox, resolve_legacy_instance_method: true do
+        argument :value, String
       end
       def unauthorized_lazy_box(value:)
         # Make it extra nested, just for good measure.
         Box.new(value: Box.new(value: value))
       end
-      field :unauthorized_list_items, [UnauthorizedObject], null: true
+      field :unauthorized_list_items, [UnauthorizedObject], resolve_legacy_instance_method: true
       def unauthorized_list_items
         [self, self]
       end
 
-      field :unauthorized_lazy_check_box, UnauthorizedCheckBox, null: true, resolver_method: :unauthorized_lazy_box do
-        argument :value, String, required: true
+      field :unauthorized_lazy_check_box, UnauthorizedCheckBox, resolver_method: :unauthorized_lazy_box, resolve_legacy_instance_method: :unauthorized_lazy_box do
+        argument :value, String
       end
 
-      field :unauthorized_interface, UnauthorizedInterface, null: true, resolver_method: :unauthorized_lazy_box do
-        argument :value, String, required: true
+      field :unauthorized_interface, UnauthorizedInterface, resolver_method: :unauthorized_lazy_box, resolve_legacy_instance_method: :unauthorized_lazy_box do
+        argument :value, String
       end
 
-      field :unauthorized_lazy_list_interface, [UnauthorizedInterface, null: true], null: true
+      field :unauthorized_lazy_list_interface, [UnauthorizedInterface, null: true], resolve_legacy_instance_method: true
 
       def unauthorized_lazy_list_interface
         ["z", Box.new(value: Box.new(value: "z2")), "a", Box.new(value: "a")]
       end
 
-      field :integers, IntegerObjectConnection, null: false
+      field :integers, IntegerObjectConnection, null: false, resolve_legacy_instance_method: true
 
       def integers
         [1,2,3]
       end
 
-      field :lazy_integers, IntegerObjectConnection, null: false
+      field :lazy_integers, IntegerObjectConnection, null: false, resolve_legacy_instance_method: true
 
       def lazy_integers
         Box.new(value: Box.new(value: [1,2,3]))
       end
 
-      field :replaced_object, ReplacedObject, null: false
+      field :replaced_object, ReplacedObject, null: false, resolve_legacy_instance_method: true
       def replaced_object
         Replaceable.new
       end
@@ -380,13 +327,7 @@ describe GraphQL::Authorization do
         super && !ctx[:hidden_mutation]
       end
 
-      field :some_return_field, String, null: true
-    end
-
-    class DoInaccessibleStuff < GraphQL::Schema::RelayClassicMutation
-      def self.accessible?(ctx)
-        super && (ctx[:inaccessible_mutation] ? false : true)
-      end
+      field :some_return_field, String
     end
 
     class DoUnauthorizedStuff < GraphQL::Schema::RelayClassicMutation
@@ -398,7 +339,6 @@ describe GraphQL::Authorization do
     class Mutation < BaseObject
       field :do_hidden_stuff, mutation: DoHiddenStuff
       field :do_hidden_stuff2, mutation: DoHiddenStuff2
-      field :do_inaccessible_stuff, mutation: DoInaccessibleStuff
       field :do_unauthorized_stuff, mutation: DoUnauthorizedStuff
     end
 
@@ -407,13 +347,15 @@ describe GraphQL::Authorization do
       def self.visible?(ctx)
         !!ctx[:show_nothing_directive]
       end
+
+      def self.resolve_field(...); end
     end
 
     class Schema < GraphQL::Schema
       query(Query)
       mutation(Mutation)
       directive(Nothing)
-
+      use GraphQL::Schema::Warden if ADD_WARDEN
       lazy_resolve(Box, :value)
 
       def self.unauthorized_object(err)
@@ -427,13 +369,11 @@ describe GraphQL::Authorization do
           raise GraphQL::ExecutionError, "Unauthorized #{err.type.graphql_name}: #{err.object.inspect}"
         end
       end
-
-      # use GraphQL::Backtrace
     end
 
     class SchemaWithFieldHook < GraphQL::Schema
       query(Query)
-
+      use GraphQL::Schema::Warden if ADD_WARDEN
       lazy_resolve(Box, :value)
 
       def self.unauthorized_field(err)
@@ -452,6 +392,7 @@ describe GraphQL::Authorization do
     AuthTest::Schema.execute(*args, **kwargs)
   end
 
+
   describe "applying the visible? method" do
     it "works in queries" do
       res = auth_execute(" { int int2 } ", context: { hide: true })
@@ -467,7 +408,7 @@ describe GraphQL::Authorization do
 
       error_queries.each do |name, q|
         hidden_res = auth_execute(q, context: { hide: true})
-        assert_equal ["Field '#{name}' doesn't exist on type 'Query'"], hidden_res["errors"].map { |e| e["message"] }
+        assert_equal ["Field '#{name}' doesn't exist on type 'Query'#{name == "hiddenDefaultInterface" ?  "" : " (Did you mean `hiddenConnection`?)"}"], hidden_res["errors"].map { |e| e["message"] }
 
         visible_res = auth_execute(q)
         # Both fields exist; the interface resolves to the object type, though
@@ -527,7 +468,7 @@ describe GraphQL::Authorization do
       assert_equal "RelayObjectEdge", visible_res["data"]["hiddenEdge"]["__typename"]
     end
 
-    it "treats hidden enum values as non-existant, even in lists" do
+    it "treats hidden enum values as non-existent, even in lists" do
       hidden_res_1 = auth_execute <<-GRAPHQL, context: { hide: true }
       {
         landscapeFeature(enum: TAR_PIT)
@@ -544,7 +485,7 @@ describe GraphQL::Authorization do
 
       assert_equal ["Argument 'enums' on Field 'landscapeFeatures' has an invalid value ([STREAM, TAR_PIT]). Expected type '[LandscapeFeature!]'."], hidden_res_2["errors"].map { |e| e["message"] }
 
-      success_res = auth_execute <<-GRAPHQL, context: { hide: false }
+      success_res = auth_execute <<-GRAPHQL, context: { hide: false, authorized: true }
       {
         landscapeFeature(enum: TAR_PIT)
         landscapeFeatures(enums: [STREAM, TAR_PIT])
@@ -574,6 +515,33 @@ describe GraphQL::Authorization do
       end
     end
 
+    it "rejects incoming unauthorized enum values" do
+      res = auth_execute <<-GRAPHQL, context: { }
+        {
+          landscapeFeature(enum: STREAM)
+        }
+      GRAPHQL
+
+      assert_equal ["Unauthorized LandscapeFeature: \"STREAM\""], res["errors"].map { |e| e["message"] }
+    end
+
+    it "rejects outgoing unauthorized enum values" do
+      err = assert_raises(AuthTest::LandscapeFeature::UnresolvedValueError) do
+        auth_execute <<-GRAPHQL, context: { }
+          {
+            landscapeFeature(string: "STREAM")
+          }
+        GRAPHQL
+      end
+
+      # This switches on `context[:current_path]` which isn't implemented by exec-next (yet?)
+      expected_message = if_exec_next(
+        "Resolving Query.landscapeFeature: `\"STREAM\"` was returned for `LandscapeFeature`, but this value was unauthorized. Update the field or resolver to return a different value in this case (or return `nil`).",
+        "`Query.landscapeFeature` returned `\"STREAM\"` at `landscapeFeature`, but this value was unauthorized. Update the field or resolver to return a different value in this case (or return `nil`)."
+      )
+      assert_equal expected_message, err.message
+    end
+
     it "works in introspection" do
       res = auth_execute <<-GRAPHQL, context: { hide: true, hidden_mutation: true }
         {
@@ -592,7 +560,7 @@ describe GraphQL::Authorization do
       query_field_names = res["data"]["query"]["fields"].map { |f| f["name"] }
       refute_includes query_field_names, "int"
       int2_arg_names = res["data"]["query"]["fields"].find { |f| f["name"] == "int2" }["args"].map { |a| a["name"] }
-      assert_equal ["int", "inaccessible", "unauthorized"], int2_arg_names
+      assert_equal ["int", "unauthorized"], int2_arg_names
 
       assert_nil res["data"]["hiddenObject"]
       assert_nil res["data"]["hiddenInterface"]
@@ -602,12 +570,33 @@ describe GraphQL::Authorization do
     end
 
     it "works when printing the SDL" do
-      full_sdl = AuthTest::Schema.to_definition
-      restricted_sdl = AuthTest::Schema.to_definition(context: { hide: true, hidden_mutation: true, hidden_relay: true })
-      assert_includes full_sdl, 'Hidden'
-      assert_includes full_sdl, 'hidden'
-      refute_includes restricted_sdl, 'Hidden'
-      refute_includes restricted_sdl, 'hidden'
+      full_sdl_lines = AuthTest::Schema.to_definition.split("\n")
+      restricted_sdl_lines = AuthTest::Schema.to_definition(context: { hide: true, hidden_mutation: true, hidden_relay: true }).split("\n")
+      expected_hidden_lines = [
+        "Autogenerated return type of DoHiddenStuff2.",
+        "type DoHiddenStuff2Payload {",
+        "Autogenerated input type of DoHiddenStuff",
+        "input DoHiddenStuffInput {",
+        "Autogenerated return type of DoHiddenStuff.",
+        "type DoHiddenStuffPayload {",
+        "interface HiddenDefaultInterface",
+        "interface HiddenInterface",
+        "type HiddenObject implements HiddenDefaultInterface & HiddenInterface {",
+        "  doHiddenStuff(",
+        "    Parameters for DoHiddenStuff",
+        "    input: DoHiddenStuffInput!",
+        "  ): DoHiddenStuffPayload",
+        "  doHiddenStuff2: DoHiddenStuff2Payload",
+        "  hidden: Int!",
+        "  hiddenConnection(",
+        "  hiddenDefaultInterface: HiddenDefaultInterface!",
+        "  hiddenEdge: RelayObjectEdge",
+        "  hiddenInterface: HiddenInterface!",
+        "  hiddenObject: HiddenObject!",
+        "  int2(hidden: Int, int: Int, unauthorized: Int): Int"
+      ]
+      assert_equal expected_hidden_lines, full_sdl_lines.select { |l| l.include?("Hidden") || l.include?("hidden") }
+      assert_equal [], restricted_sdl_lines.select { |l| l.include?("Hidden") || l.include?("hidden") }
     end
 
     it "works with directives" do
@@ -674,6 +663,7 @@ describe GraphQL::Authorization do
               query = "{ unauthorized }"
               response = AuthTest::SchemaWithFieldHook.execute(query, root_value: 34, context: { lazy_field_authorized: false })
               assert_nil response["data"].fetch("unauthorized")
+              assert_equal ["Unauthorized field unauthorized on Query: 34"], response["errors"].map { |e| e["message"] }
             end
           end
 
@@ -762,23 +752,6 @@ describe GraphQL::Authorization do
       unauthorized_res = auth_execute(query, context: { unauthorized_relay: true })
       conn = unauthorized_res["data"].fetch("unauthorizedConnection")
       assert_equal "RelayObjectConnection", conn.fetch("__typename")
-      # This is tricky: the previous behavior was to replace the _whole_
-      # list with `nil`. This was due to an implementation detail:
-      # The list field's return value (an array of integers) was wrapped
-      # _before_ returning, and during this wrapping, a cascading error
-      # caused the entire field to be nilled out.
-      #
-      # In the interpreter, each list item is contained and the error doesn't propagate
-      # up to the whole list.
-      #
-      # Originally, I thought that this was a _feature_ that obscured list entries.
-      # But really, look at the test below: you don't get this "feature" if
-      # you use `edges { node }`, so it can't be relied on in any way.
-      #
-      # All that to say, in the interpreter, `nodes` and `edges { node }` behave
-      # the same.
-      #
-      # TODO revisit the docs for this.
       failed_nodes_value = [nil]
       assert_equal failed_nodes_value, conn.fetch("nodes")
       assert_equal [{"node" => nil, "__typename" => "RelayObjectEdge"}], conn.fetch("edges")
@@ -930,8 +903,11 @@ describe GraphQL::Authorization do
         assert_equal "Query", res["data"]["__typename"]
 
         unauth_res = auth_execute(query, context: { query_unauthorized: true })
-        assert_nil unauth_res["data"]
-        assert_equal [{"message"=>"Unauthorized Query: nil"}], unauth_res["errors"]
+
+        assert_equal({
+          "errors" => [if_exec_next({"message"=>"Unauthorized Query: nil", "path" => [] }, {"message"=>"Unauthorized Query: nil"})],
+          "data" => nil,
+        }, unauth_res.to_h)
       end
 
       describe "when the object authorization raises an UnauthorizedFieldError" do
@@ -951,7 +927,7 @@ describe GraphQL::Authorization do
           false
         end
 
-        field :int, Integer, null: false
+        field :int, Integer, null: false, resolve_legacy_instance_method: true
 
         def int
           1
@@ -962,19 +938,34 @@ describe GraphQL::Authorization do
 
     it "works out-of-the-box" do
       res = FalseSchema.execute("{ int }")
-      assert_nil res.fetch("data")
+      if TESTING_EXEC_NEXT
+        refute res.key?("data")
+      else
+        assert_nil res.fetch("data")
+      end
       refute res.key?("errors")
     end
   end
 
   describe "overriding authorized_new" do
     class AuthorizedNewOverrideSchema < GraphQL::Schema
-      class LogTracer
+      module LogTrace
         def trace(key, data)
-          if (c = data[:context]) || ((q = data[:query]) && (c = q.context))
+          if ((q = data[:query]) && (c = q.context))
             c[:log] << key
           end
           yield
+        end
+        ["parse", "lex", "validate",
+        "analyze_query", "analyze_multiplex",
+        "execute_query", "execute_multiplex",
+        "execute_field", "execute_field_lazy",
+        "authorized", "authorized_lazy",
+        "resolve_type", "resolve_type_lazy",
+        "execute_query_lazy"].each do |method_name|
+          define_method(method_name) do |**data, &block|
+            trace(method_name, data, &block)
+          end
         end
       end
 
@@ -996,10 +987,11 @@ describe GraphQL::Authorization do
 
       query(Query)
       introspection(CustomIntrospection)
-      tracer(LogTracer.new)
+      trace_with(LogTrace)
     end
 
     it "avoids calls to Object.authorized?" do
+      exec_next_WONTFIX("Doesn't work this way with exec-next")
       log = []
       res = AuthorizedNewOverrideSchema.execute("{ __typename int }", context: { log: log })
       assert_equal "Query", res["data"]["__typename"]

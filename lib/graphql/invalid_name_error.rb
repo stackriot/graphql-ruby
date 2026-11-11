@@ -1,6 +1,8 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
-  class InvalidNameError < GraphQL::ExecutionError
+  class InvalidNameError < GraphQL::Error
     attr_reader :name, :valid_regex
     def initialize(name, valid_regex)
       @name = name

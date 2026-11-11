@@ -1,6 +1,7 @@
 # frozen_string_literal: true
+#--
+# typed: true
 require "graphql/execution/lazy/lazy_method_map"
-require "graphql/execution/lazy/resolve"
 
 module GraphQL
   module Execution
@@ -11,63 +12,73 @@ module GraphQL
     # This is an itty-bitty promise-like object, with key differences:
     # - It has only two states, not-resolved and resolved
     # - It has no error-catching functionality
-    # @api private
-    class Lazy
-      # Traverse `val`, lazily resolving any values along the way
-      # @param val [Object] A data structure containing mixed plain values and `Lazy` instances
-      # @return void
-      def self.resolve(val)
-        Resolve.resolve(val)
-      end
+    class Lazy # :nodoc:
+      attr_reader :field
 
-      attr_reader :path, :field
-
-      # Create a {Lazy} which will get its inner value by calling the block
-      # @param path [Array<String, Integer>]
-      # @param field [GraphQL::Schema::Field]
-      # @param get_value_func [Proc] a block to get the inner value (later)
-      def initialize(path: nil, field: nil, &get_value_func)
+      # Create a [Lazy](rdoc-ref:Lazy) which will get its inner value by calling the block
+      #
+      # **Parameters**
+      #
+      # - `field` (`GraphQL::Schema::Field`)
+      # - `get_value_func` (`Proc`) — a block to get the inner value (later)
+      #
+      # :call-seq:
+      #   initialize(GraphQL::Schema::Field field:, Proc &get_value_func)
+      def initialize(field: nil, &get_value_func)
         @get_value_func = get_value_func
         @resolved = false
-        @path = path
         @field = field
       end
 
-      # @return [Object] The wrapped value, calling the lazy block if necessary
+      # **Returns**
+      #
+      # - `Object` — The wrapped value, calling the lazy block if necessary
+      #
+      # :call-seq:
+      #   value() -> Object
       def value
         if !@resolved
           @resolved = true
-          @value = begin
-            v = @get_value_func.call
-            if v.is_a?(Lazy)
-              v = v.value
-            end
-            v
-          rescue GraphQL::ExecutionError => err
-            err
+          v = @get_value_func.call
+          if v.is_a?(Lazy)
+            v = v.value
           end
+          @value = v
         end
 
         # `SKIP` was made into a subclass of `GraphQL::Error` to improve runtime performance
         # (fewer clauses in a hot `case` block), but now it requires special handling here.
         # I think it's still worth it for the performance win, but if the number of special
         # cases grows, then maybe it's worth rethinking somehow.
-        if @value.is_a?(StandardError) && @value != GraphQL::Execution::Execute::SKIP
+        if @value.is_a?(StandardError) && !@value.is_a?(GraphQL::Execution::Skip)
           raise @value
         else
           @value
         end
       end
 
-      # @return [Lazy] A {Lazy} whose value depends on another {Lazy}, plus any transformations in `block`
+      # **Returns**
+      #
+      # - `Lazy` — A [Lazy](rdoc-ref:Lazy) whose value depends on another [Lazy](rdoc-ref:Lazy), plus any transformations in `block`
+      #
+      # :call-seq:
+      #   then() -> Lazy
       def then
         self.class.new {
           yield(value)
         }
       end
 
-      # @param lazies [Array<Object>] Maybe-lazy objects
-      # @return [Lazy] A lazy which will sync all of `lazies`
+      # **Parameters**
+      #
+      # - `lazies` (`Array<Object>`) — Maybe-lazy objects
+      #
+      # **Returns**
+      #
+      # - `Lazy` — A lazy which will sync all of `lazies`
+      #
+      # :call-seq:
+      #   all(Array[Object] lazies) -> Lazy
       def self.all(lazies)
         self.new {
           lazies.map { |l| l.is_a?(Lazy) ? l.value : l }
@@ -75,7 +86,7 @@ module GraphQL
       end
 
       # This can be used for fields which _had no_ lazy results
-      # @api private
+      # :nodoc:
       NullResult = Lazy.new(){}
       NullResult.value
     end

@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 require "graphql/pagination/relation_connection"
 
 module GraphQL

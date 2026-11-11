@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   class Schema
     class IntrospectionSystem
@@ -25,10 +27,10 @@ module GraphQL
           load_constant(:DirectiveLocationEnum)
         ]
         @types = {}
-        @possible_types = {}
+        @possible_types = {}.compare_by_identity
         type_defns.each do |t|
           @types[t.graphql_name] = t
-          @possible_types[t.graphql_name] = [t]
+          @possible_types[t] = [t]
         end
         @entry_point_fields =
           if schema.disable_introspection_entry_points?
@@ -39,7 +41,9 @@ module GraphQL
             entry_point_fields.delete('__type') if schema.disable_type_introspection_entry_point?
             entry_point_fields
           end
+        @entry_point_fields.each { |k, v| v.dynamic_introspection = true }
         @dynamic_fields = get_fields_from_class(class_sym: :DynamicFields)
+        @dynamic_fields.each { |k, v| v.dynamic_introspection = true }
       end
 
       def entry_points
@@ -62,12 +66,14 @@ module GraphQL
       # Replace those with the objects that they refer to, since LateBoundTypes
       # aren't handled at runtime.
       #
-      # @api private
-      # @return void
-      def resolve_late_bindings
+      #
+      # **Returns**
+      #
+      # - `Object` — void
+      def resolve_late_bindings # :nodoc:
         @types.each do |name, t|
           if t.kind.fields?
-            t.fields.each do |_name, field_defn|
+            t.all_field_definitions.each do |field_defn|
               field_defn.type = resolve_late_binding(field_defn.type)
             end
           end
@@ -88,10 +94,11 @@ module GraphQL
       def resolve_late_binding(late_bound_type)
         case late_bound_type
         when GraphQL::Schema::LateBoundType
-          @schema.get_type(late_bound_type.name)
-        when GraphQL::Schema::List, GraphQL::ListType
+          type_name = late_bound_type.name
+          @types[type_name] || @schema.get_type(type_name)
+        when GraphQL::Schema::List
           resolve_late_binding(late_bound_type.of_type).to_list_type
-        when GraphQL::Schema::NonNull, GraphQL::NonNullType
+        when GraphQL::Schema::NonNull
           resolve_late_binding(late_bound_type.of_type).to_non_null_type
         when Module
           # It's a normal type -- no change required
@@ -102,39 +109,25 @@ module GraphQL
       end
 
       def load_constant(class_name)
-        const = @custom_namespace.const_get(class_name)
-        if @class_based
-          dup_type_class(const)
-        else
-          # Use `.to_graphql` to get a freshly-made version, not shared between schemas
-          const.to_graphql
+        const = begin
+          @custom_namespace.const_get(class_name)
+        rescue NameError
+          # Dup the built-in so that the cached fields aren't shared
+          @built_in_namespace.const_get(class_name)
         end
-      rescue NameError
-        # Dup the built-in so that the cached fields aren't shared
-        dup_type_class(@built_in_namespace.const_get(class_name))
+        dup_type_class(const)
       end
 
       def get_fields_from_class(class_sym:)
         object_type_defn = load_constant(class_sym)
-
-        if object_type_defn.is_a?(Module)
-          object_type_defn.fields
-        else
-          extracted_field_defns = {}
-          object_class = object_type_defn.metadata[:type_class]
-          object_type_defn.all_fields.each do |field_defn|
-            inner_resolve = field_defn.resolve_proc
-            resolve_with_instantiate = PerFieldProxyResolve.new(object_class: object_class, inner_resolve: inner_resolve)
-            extracted_field_defns[field_defn.name] = field_defn.redefine(resolve: resolve_with_instantiate)
-          end
-          extracted_field_defns
-        end
+        object_type_defn.fields
       end
 
       # This is probably not 100% robust -- but it has to be good enough to avoid modifying the built-in introspection types
       def dup_type_class(type_class)
         type_name = type_class.graphql_name
         Class.new(type_class) do
+          #: self as untyped
           # This won't be inherited like other things will
           graphql_name(type_name)
 
@@ -145,23 +138,6 @@ module GraphQL
               add_field(dup_field)
             end
           end
-        end
-      end
-
-      class PerFieldProxyResolve
-        def initialize(object_class:, inner_resolve:)
-          @object_class = object_class
-          @inner_resolve = inner_resolve
-        end
-
-        def call(obj, args, ctx)
-          query_ctx = ctx.query.context
-          # Remove the QueryType wrapper
-          if obj.is_a?(GraphQL::Schema::Object)
-            obj = obj.object
-          end
-          wrapped_object = @object_class.authorized_new(obj, query_ctx)
-          @inner_resolve.call(wrapped_object, args, ctx)
         end
       end
     end

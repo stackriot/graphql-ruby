@@ -36,10 +36,11 @@
 //     // Do something with `data` and/or `errors`
 //   }})
 //
-import { ApolloLink, Observable, FetchResult, NextLink, Operation } from "@apollo/client/core"
-import { Realtime } from "ably"
+import { Observable } from "@apollo/client"
+import { ApolloLink } from "@apollo/client/link"
+import { Realtime, Types } from "ably"
 
-type RequestResult = Observable<FetchResult<{ [key: string]: any; }, Record<string, any>, Record<string, any>>>
+type RequestResult = ApolloLink.Result<Record<string, any>, Record<string, any>>
 
 class AblyLink extends ApolloLink {
   ably: Realtime
@@ -50,27 +51,56 @@ class AblyLink extends ApolloLink {
     this.ably = options.ably
   }
 
-  request(operation: Operation, forward: NextLink): RequestResult {
+  request(operation: ApolloLink.Operation, forward: ApolloLink.ForwardFunction): Observable<RequestResult> {
     return new Observable((observer) => {
+      let ablyChannel: Types.RealtimeChannelCallbacks | null = null
+      let subscriptionChannelId: string | null = null
       // Check the result of the operation
-      forward(operation).subscribe({ next: (data) => {
-        // If the operation has the subscription header, it's a subscription
-        const subscriptionChannelConfig = this._getSubscriptionChannel(operation)
-        if (subscriptionChannelConfig) {
-          // This will keep pushing to `.next`
-          this._createSubscription(subscriptionChannelConfig, observer)
+      const resultObserver = forward(operation)
+      const resultSubscription = resultObserver.subscribe({
+        next: (data: any) => {
+          // If the operation has the subscription header, it's a subscription
+          const subscriptionChannelConfig = this._getSubscriptionChannel(operation)
+          if (subscriptionChannelConfig.channel) {
+            subscriptionChannelId = subscriptionChannelConfig.channel
+            // This will keep pushing to `.next`
+            ablyChannel = this._createSubscription(
+              subscriptionChannelConfig,
+              observer
+            )
+          } else {
+            // This isn't a subscription,
+            // So pass the data along and close the observer.
+            if (data) {
+              observer.next(data)
+            }
+            observer.complete()
+          }
+        },
+        error: observer.error.bind(observer)
+        // complete: observer.complete Don't pass this because Apollo unsubscribes if you do
+      })
+
+      // Return an object that will unsubscribe _if_ the query was a subscription.
+      return {
+        closed: false,
+        unsubscribe: () => {
+          if (ablyChannel && subscriptionChannelId) {
+            const ablyClientId = this.ably.auth.clientId
+            if (ablyClientId) {
+              ablyChannel.presence.leave()
+            } else {
+              ablyChannel.presence.leaveClient("graphql-subscriber")
+            }
+            ablyChannel.unsubscribe()
+            resultSubscription.unsubscribe()
+          }
         }
-        else {
-          // This isn't a subscription,
-          // So pass the data along and close the observer.
-          observer.next(data)
-          observer.complete()
-        }
-      }})
-    })
+      }
+    });
   }
 
-  _getSubscriptionChannel(operation: Operation) {
+  _getSubscriptionChannel(operation: ApolloLink.Operation) {
     const response = operation.getContext().response
     // Check to see if the response has the header
     const subscriptionChannel = response.headers.get("X-Subscription-ID")
@@ -79,10 +109,15 @@ class AblyLink extends ApolloLink {
     return { channel: subscriptionChannel, key: cipherKey }
   }
 
-  _createSubscription(subscriptionChannelConfig: { channel: string, key: string }, observer: { next: Function, complete: Function}) {
+  _createSubscription(
+    subscriptionChannelConfig: { channel: string; key: string },
+    observer: { next: Function; complete: Function }
+  ) {
     const subscriptionChannel = subscriptionChannelConfig["channel"]
     const subscriptionKey = subscriptionChannelConfig["key"]
-    const ablyOptions = subscriptionKey ? { cipher: { key: subscriptionKey } } : {}
+    const ablyOptions = subscriptionKey
+      ? { cipher: { key: subscriptionKey } }
+      : {}
     const ablyChannel = this.ably.channels.get(subscriptionChannel, ablyOptions)
     const ablyClientId = this.ably.auth.clientId
     // Register presence, so that we can detect empty channels and clean them up server-side
@@ -94,6 +129,11 @@ class AblyLink extends ApolloLink {
     // Subscribe for more update
     ablyChannel.subscribe("update", function(message) {
       var payload = message.data
+      const result = payload.result
+      if (result) {
+        // Send the new response to listeners
+        observer.next(result)
+      }
       if (!payload.more) {
         // This is the end, the server says to unsubscribe
         if (ablyClientId) {
@@ -101,15 +141,10 @@ class AblyLink extends ApolloLink {
         } else {
           ablyChannel.presence.leaveClient("graphql-subscriber")
         }
-        ablyChannel.unsubscribe()
         observer.complete()
       }
-      const result = payload.result
-      if (result) {
-        // Send the new response to listeners
-        observer.next(result)
-      }
     })
+    return ablyChannel
   }
 }
 

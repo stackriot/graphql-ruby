@@ -1,14 +1,4 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Type Definitions
-title: Extending the GraphQL-Ruby Type Definition System
-desc: Adding metadata and custom helpers to the DSL
-index: 8
-redirect_from:
-  - /schema/extending_the_dsl/
----
+# Extending the GraphQL-Ruby Type Definition System
 
 While integrating GraphQL into your app, you can customize the definition DSL. For example, you might:
 
@@ -80,7 +70,7 @@ So, you can customize this process by:
 For example, you can create a custom class which accepts a new parameter to `initialize`:
 
 ```ruby
-class Types::AuthorizedField < GraphQL::Schema::Field
+class Types::BaseField < GraphQL::Schema::Field
   # Override #initialize to take a new argument:
   def initialize(*args, required_permission: nil, **kwargs, &block)
     @required_permission = required_permission
@@ -97,20 +87,20 @@ Then, pass the field class as `field_class(...)` wherever it should be used:
 ```ruby
 class Types::BaseObject < GraphQL::Schema::Object
   # Use this class for defining fields
-  field_class AuthorizedField
+  field_class BaseField
 end
 
 # And....
 class Types::BaseInterface < GraphQL::Schema::Interface
-  field_class AuthorizedField
+  field_class BaseField
 end
 
 class Mutations::BaseMutation < GraphQL::Schema::RelayClassicMutation
-  field_class AuthorizedField 
-end 
+  field_class BaseField
+end
 ```
 
-Now, `AuthorizedField.new(*args, &block)` will be used to create `GraphQL::Schema::Field`s on those types. At runtime `field.required_permission` will return the configured value.
+Now, `BaseField.new(*args, &block)` will be used to create `GraphQL::Schema::Field`s on those types. At runtime `field.required_permission` will return the configured value.
 
 ### Customizing Connections
 
@@ -175,4 +165,4 @@ Enum values may be customized in a similar way to Fields.
 - Create a new class extending `GraphQL::Schema::EnumValue`
 - Assign it to your base `Enum` class with `enum_value_class(MyEnumValueClass)`
 
-Then, in your custom argument class, you can use `#initialize(name, desc = nil, **kwargs)` to take input from the DSL.
+Then, in your custom enum class, you can use `#initialize(name, desc = nil, **kwargs)` to take input from the DSL.

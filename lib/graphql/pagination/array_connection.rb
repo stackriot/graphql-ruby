@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 require "graphql/pagination/connection"
 
 module GraphQL
@@ -20,26 +22,41 @@ module GraphQL
       end
 
       def cursor_for(item)
-        idx = items.find_index(item) + 1
-        encode(idx.to_s)
+        index = cursor_index_for(item, items)
+        encode((index + 1).to_s)
+      end
+
+      def cursor_for_position(item, position) # :nodoc:
+        if self.class.custom_cursor_for?(ArrayConnection)
+          super
+        else
+          encode((@paged_nodes_offset + position + 1).to_s)
+        end
       end
 
       private
 
       def index_from_cursor(cursor)
-        decode(cursor).to_i
+        index = Integer(decode(cursor), 10, exception: false) #: Integer?
+        if index.nil? || index <= 0
+          raise GraphQL::ExecutionError, "Invalid cursor: #{cursor.inspect}"
+        end
+        [index, items.length + 1].min
       end
 
       # Populate all the pagination info _once_,
       # It doesn't do anything on subsequent calls.
       def load_nodes
         @nodes ||= begin
+          sliced_nodes_offset = after ? index_from_cursor(after) : 0
           sliced_nodes = if before && after
-            items[index_from_cursor(after)..index_from_cursor(before)-1] || []
+            end_idx = index_from_cursor(before) - 2
+            end_idx < 0 ? [] : items[sliced_nodes_offset..end_idx] || []
           elsif before
-            items[0..index_from_cursor(before)-2] || []
+            end_idx = index_from_cursor(before) - 2
+            end_idx < 0 ? [] : items[0..end_idx] || []
           elsif after
-            items[index_from_cursor(after)..-1] || []
+            items[sliced_nodes_offset..-1] || []
           else
             items
           end
@@ -54,20 +71,24 @@ module GraphQL
             false
           end
 
-          @has_next_page = if first
-            # There are more items after these items
-            sliced_nodes.count > first
-          elsif before
+          @has_next_page = if before
             # The original array is longer than the `before` index
             index_from_cursor(before) < items.length + 1
+          elsif first
+            # There are more items after these items
+            sliced_nodes.count > first
           else
             false
           end
 
           limited_nodes = sliced_nodes
+          @paged_nodes_offset = sliced_nodes_offset
 
           limited_nodes = limited_nodes.first(first) if first
-          limited_nodes = limited_nodes.last(last) if last
+          if last
+            @paged_nodes_offset += [limited_nodes.length - last, 0].max
+            limited_nodes = limited_nodes.last(last)
+          end
 
           limited_nodes
         end

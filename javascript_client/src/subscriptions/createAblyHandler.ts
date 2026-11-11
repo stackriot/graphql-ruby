@@ -8,8 +8,17 @@ interface AblyHandlerOptions {
   fetchOperation: Function
 }
 
+interface GraphQLError {
+  message: string
+  path: (string | number)[]
+  locations: number[][]
+  extensions?: object
+}
+
+type OnErrorData = AblyError | Error| GraphQLError[]
+
 interface ApolloObserver {
-  onError: Function
+  onError: (err: OnErrorData) => void
   onNext: Function
   onCompleted: Function
 }
@@ -22,19 +31,17 @@ const anonymousClientId = "graphql-subscriber"
 // Note that using a higher value emits a warning.
 const maxNumRewindMessages = 100
 
-class AblyError {
-  constructor(reason: Types.ErrorInfo) {
-    const error = Error(reason.message)
-    const attributes: (keyof Types.ErrorInfo)[] = ["code", "statusCode"]
-    attributes.forEach(attr => {
-      Object.defineProperty(error, attr, {
-        get() {
-          return reason[attr]
-        }
-      })
-    })
-    Error.captureStackTrace(error, AblyError)
-    return error
+class AblyError extends Error {
+  constructor(public reason: Types.ErrorInfo) {
+    super(reason.message)
+  }
+
+  get code() {
+    return this.reason.code
+  }
+
+  get statusCode() {
+    return this.reason.statusCode
   }
 }
 
@@ -52,12 +59,12 @@ function createAblyHandler(options: AblyHandlerOptions) {
   ) => {
     let channel: Types.RealtimeChannelCallbacks | null = null
 
-    const dispatchResult = (result: { errors: any; data: any }) => {
+    const dispatchResult = (result: { errors?: GraphQLError[]; data: any }) => {
       if (result) {
         if (result.errors) {
           // What kind of error stuff belongs here?
           observer.onError(result.errors)
-        } else if (result.data) {
+        } else if (result.data && Object.keys(result.data).length > 0) {
           observer.onNext({ data: result.data })
         }
       }
@@ -119,7 +126,7 @@ function createAblyHandler(options: AblyHandlerOptions) {
         })
 
         // Register presence, so that we can detect empty channels and clean them up server-side
-        const enterCallback = (errorInfo: Types.ErrorInfo | undefined) => {
+        const enterCallback = (errorInfo: Types.ErrorInfo | null | undefined) => {
           if (errorInfo && channel) {
             observer.onError(new AblyError(errorInfo))
           }
@@ -142,7 +149,7 @@ function createAblyHandler(options: AblyHandlerOptions) {
         // (In that case, we want to make sure the channel is cleaned up properly.)
         dispatchResult(response.body)
       } catch (error) {
-        observer.onError(error)
+        observer.onError(error as Error)
       }
     })()
 
@@ -157,7 +164,7 @@ function createAblyHandler(options: AblyHandlerOptions) {
             // Ensure channel is no longer attaching, as otherwise detach does
             // nothing
             if (disposedChannel.state === "attaching") {
-              await new Promise((resolve, _reject) => {
+              await new Promise<void>((resolve, _reject) => {
                 const onStateChange = (
                   stateChange: Types.ChannelStateChange
                 ) => {
@@ -171,7 +178,7 @@ function createAblyHandler(options: AblyHandlerOptions) {
             }
 
             await new Promise<void>((resolve, reject) => {
-              disposedChannel.detach((err) => {
+              disposedChannel.detach(err => {
                 if (err) {
                   reject(new AblyError(err))
                 } else {
@@ -183,11 +190,11 @@ function createAblyHandler(options: AblyHandlerOptions) {
             ably.channels.release(disposedChannel.name)
           }
         } catch (error) {
-          observer.onError(error)
+          observer.onError(error as Error)
         }
       }
     }
   }
 }
 
-export { createAblyHandler, AblyHandlerOptions }
+export { createAblyHandler, AblyHandlerOptions, OnErrorData }

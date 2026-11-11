@@ -9,9 +9,7 @@ describe GraphQL::Tracing::StatsdTracing do
         yield
       end
 
-      def timings
-        @timings
-      end
+      attr_reader :timings
 
       def clear
         @timings = []
@@ -20,17 +18,33 @@ describe GraphQL::Tracing::StatsdTracing do
   end
 
   class StatsdTestSchema < GraphQL::Schema
-    class Query < GraphQL::Schema::Object
-      field :int, Integer, null: false
+    class Thing < GraphQL::Schema::Object
+      field :str, String, resolve_static: true
+      def self.str(context); "blah"; end
 
-      def int
+      def str; self.class.str(context); end
+    end
+
+    class Query < GraphQL::Schema::Object
+      field :int, Integer, null: false, resolve_static: true
+
+      def self.int(context)
         1
       end
+
+      def int
+        self.class.int(context)
+      end
+
+      field :thing, Thing, resolve_static: true
+      def self.thing(context); :thing; end
+
+      def thing; self.class.thing(context); end
     end
 
     query(Query)
 
-    use GraphQL::Tracing::StatsdTracing, statsd: MockStatsd
+    use GraphQL::Tracing::StatsdTracing, statsd: MockStatsd, legacy_tracing: true
   end
 
   before do
@@ -38,18 +52,22 @@ describe GraphQL::Tracing::StatsdTracing do
   end
 
   it "gathers timings" do
-    StatsdTestSchema.execute("query X { int }")
+    StatsdTestSchema.execute("query X { int thing { str } }")
     expected_timings = [
       "graphql.execute_multiplex",
       "graphql.analyze_multiplex",
-      "graphql.lex",
+      (USING_C_PARSER ? "graphql.lex" : nil),
       "graphql.parse",
       "graphql.validate",
       "graphql.analyze_query",
       "graphql.execute_query",
-      "graphql.authorized.Query",
+      *if_exec_next([], [
+        "graphql.authorized.Query",
+        "graphql.Query.thing",
+        "graphql.authorized.Thing",
+      ]),
       "graphql.execute_query_lazy"
-    ]
+    ].compact
     assert_equal expected_timings, MockStatsd.timings
   end
 end

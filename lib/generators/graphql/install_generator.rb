@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: ignore
 require 'rails/generators'
 require 'rails/generators/base'
 require_relative 'core'
@@ -45,9 +47,16 @@ module Graphql
     # post "/graphql", to: "graphql#execute"
     # ```
     #
+    # Add ActiveRecord::QueryLogs metadata:
+    # ```ruby
+    #   current_graphql_operation: -> { GraphQL::Current.operation_name },
+    #   current_graphql_field: -> { GraphQL::Current.field&.path },
+    #   current_dataloader_source: -> { GraphQL::Current.dataloader_source_class },
+    # ```
+    #
     # Accept a `--batch` option which adds `GraphQL::Batch` setup.
     #
-    # Use `--no-graphiql` to skip `graphiql-rails` installation.
+    # Use `--skip-graphiql` to skip `graphiql-rails` installation.
     #
     # TODO: also add base classes
     class InstallGenerator < Rails::Generators::Base
@@ -92,6 +101,11 @@ module Graphql
         default: false,
         desc: "Use GraphQL Playground over Graphiql as IDE"
 
+      class_option :skip_query_logs,
+        type: :boolean,
+        default: false,
+        desc: "Skip ActiveRecord::QueryLogs hooks in config/application.rb"
+
       # These two options are taken from Rails' own generators'
       class_option :api,
         type: :boolean,
@@ -105,11 +119,14 @@ module Graphql
           template("#{base_type}.erb", "#{options[:directory]}/types/#{base_type}.rb")
         end
 
+        # All resolvers are defined as living in their own module, including this class.
+        template("base_resolver.erb", "#{options[:directory]}/resolvers/base_resolver.rb")
+
         # Note: You can't have a schema without the query type, otherwise introspection breaks
         template("query_type.erb", "#{options[:directory]}/types/query_type.rb")
         insert_root_type('query', 'QueryType')
 
-        create_mutation_root_type unless options.skip_mutation_root_type?
+        invoke "graphql:install:mutation_root" unless options.skip_mutation_root_type?
 
         template("graphql_controller.erb", "app/controllers/graphql_controller.rb")
         route('post "/graphql", to: "graphql#execute"')
@@ -122,8 +139,15 @@ module Graphql
         if options.api?
           say("Skipped graphiql, as this rails project is API only")
           say("  You may wish to use GraphiQL.app for development: https://github.com/skevy/graphiql-app")
-        elsif !options[:skip_graphiql] && !File.read(Rails.root.join("Gemfile")).include?("graphiql-rails")
-          gem("graphiql-rails", group: :development)
+        elsif !options[:skip_graphiql]
+          # `gem(...)` uses `gsub_file(...)` under the hood, which is a no-op for `rails destroy...` (when `behavior == :revoke`).
+          # So handle that case by calling `gsub_file` with `force: true`.
+          if behavior == :invoke && !File.read(Rails.root.join("Gemfile")).include?("graphiql-rails")
+            gem("graphiql-rails", group: :development)
+          elsif behavior == :revoke
+            gemfile_pattern = /\n\s*gem ('|")graphiql-rails('|"), :?group(:| =>) :development/
+            gsub_file Rails.root.join("Gemfile"), gemfile_pattern, "", { force: true }
+          end
 
           # This is a little cheat just to get cleaner shell output:
           log :route, 'graphiql-rails'
@@ -168,6 +192,40 @@ RUBY
 
         if options[:relay]
           install_relay
+        end
+
+        if !options[:skip_query_logs]
+          config_file = "config/application.rb"
+          current_app_rb = File.read(Rails.root.join(config_file))
+          existing_log_tags_pattern = /config.active_record.query_log_tags = \[\n?(\s*:[a-z_]+,?\s*\n?|\s*#[^\]]*\n)*/m
+          existing_log_tags = existing_log_tags_pattern.match(current_app_rb)
+          if existing_log_tags && behavior == :invoke
+            code = <<-RUBY
+      # GraphQL-Ruby query log tags:
+      current_graphql_operation: -> { GraphQL::Current.operation_name },
+      current_graphql_field: -> { GraphQL::Current.field&.path },
+      current_dataloader_source: -> { GraphQL::Current.dataloader_source_class },
+RUBY
+            if !existing_log_tags.to_s.end_with?(",")
+              code = ",\n#{code}    "
+            end
+            # Try to insert this code _after_ any plain symbol entries in the array of query log tags:
+            after_code = existing_log_tags_pattern
+          else
+            code = <<-RUBY
+    config.active_record.query_log_tags_enabled = true
+    config.active_record.query_log_tags = [
+      # Rails query log tags:
+      :application, :controller, :action, :job,
+      # GraphQL-Ruby query log tags:
+      current_graphql_operation: -> { GraphQL::Current.operation_name },
+      current_graphql_field: -> { GraphQL::Current.field&.path },
+      current_dataloader_source: -> { GraphQL::Current.dataloader_source_class },
+    ]
+RUBY
+            after_code = "class Application < Rails::Application\n"
+          end
+          insert_into_file(config_file, code, after: after_code)
         end
 
         if gemfile_modified?

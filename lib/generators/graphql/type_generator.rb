@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: ignore
 require 'rails/generators'
 require 'rails/generators/base'
 require 'graphql'
@@ -8,22 +10,45 @@ require_relative 'core'
 
 module Graphql
   module Generators
-    class TypeGeneratorBase < Rails::Generators::Base
+    class TypeGeneratorBase < Rails::Generators::NamedBase
       include Core
 
-      argument :type_name,
-        type: :string,
-        required: true,
-        banner: "TypeName",
-        desc: "Name of this object type (expressed as Ruby or GraphQL)"
+      class_option :namespaced_types,
+        type: :boolean,
+        required: false,
+        default: false,
+        banner: "Namespaced",
+        desc: "If the generated types will be namespaced"
+
+      argument :custom_fields,
+                type: :array,
+                default: [],
+                banner: "name:type name:type ...",
+                desc: "Fields for this object (type may be expressed as Ruby or GraphQL)"
+
+      
+      attr_accessor :graphql_type
+
+      def create_type_file
+        template "#{graphql_type}.erb", "#{options[:directory]}/types#{subdirectory}/#{type_file_name}.rb"
+      end
 
       # Take a type expression in any combination of GraphQL or Ruby styles
       # and return it in a specified output style
       # TODO: nullability / list with `mode: :graphql` doesn't work
-      # @param type_expresson [String]
-      # @param mode [Symbol]
-      # @param null [Boolean]
-      # @return [(String, Boolean)] The type expression, followed by `null:` value
+      #
+      # **Parameters**
+      #
+      # - `type_expresson` (`String`)
+      # - `mode` (`Symbol`)
+      # - `null` (`Boolean`)
+      #
+      # **Returns**
+      #
+      # - `(String, Boolean)` — The type expression, followed by `null:` value
+      #
+      # :call-seq:
+      #   normalize_type_expression(type_expression, Symbol mode:, bool null:) -> (String, bool)
       def self.normalize_type_expression(type_expression, mode:, null: true)
         if type_expression.start_with?("!")
           normalize_type_expression(type_expression[1..-1], mode: mode, null: false)
@@ -59,28 +84,66 @@ module Graphql
 
       private
 
-      # @return [String] The user-provided type name, normalized to Ruby code
+      # **Returns**
+      #
+      # - `String` — The user-provided type name, normalized to Ruby code
+      #
+      # :call-seq:
+      #   type_ruby_name() -> String
       def type_ruby_name
-        @type_ruby_name ||= self.class.normalize_type_expression(type_name, mode: :ruby)[0]
+        @type_ruby_name ||= self.class.normalize_type_expression(name, mode: :ruby)[0]
       end
 
-      # @return [String] The user-provided type name, as a GraphQL name
+      # **Returns**
+      #
+      # - `String` — The user-provided type name, as a GraphQL name
+      #
+      # :call-seq:
+      #   type_graphql_name() -> String
       def type_graphql_name
-        @type_graphql_name ||= self.class.normalize_type_expression(type_name, mode: :graphql)[0]
+        @type_graphql_name ||= self.class.normalize_type_expression(name, mode: :graphql)[0]
       end
 
-      # @return [String] The user-provided type name, as a file name (without extension)
+      # **Returns**
+      #
+      # - `String` — The user-provided type name, as a file name (without extension)
+      #
+      # :call-seq:
+      #   type_file_name() -> String
       def type_file_name
         @type_file_name ||= "#{type_graphql_name}Type".underscore
       end
 
-      # @return [Array<NormalizedField>] User-provided fields, in `(name, Ruby type name)` pairs
+      # **Returns**
+      #
+      # - `Array<NormalizedField>` — User-provided fields, in `(name, Ruby type name)` pairs
+      #
+      # :call-seq:
+      #   normalized_fields() -> Array[NormalizedField]
       def normalized_fields
         @normalized_fields ||= fields.map { |f|
           name, raw_type = f.split(":", 2)
           type_expr, null = self.class.normalize_type_expression(raw_type, mode: :ruby)
           NormalizedField.new(name, type_expr, null)
         }
+      end
+
+      def ruby_class_name
+        class_prefix = 
+          if options[:namespaced_types]
+            "#{graphql_type.pluralize.camelize}::"
+          else
+            ""
+          end
+        @ruby_class_name || class_prefix + type_ruby_name.sub(/^Types::/, "")
+      end
+
+      def subdirectory
+        if options[:namespaced_types]
+          "/#{graphql_type.pluralize}"
+        else
+          ""
+        end
       end
 
       class NormalizedField
@@ -90,8 +153,12 @@ module Graphql
           @null = null
         end
 
-        def to_ruby
-          "field :#{@name}, #{@type_expr}, null: #{@null}"
+        def to_object_field
+          "field :#{@name}, #{@type_expr}#{@null ? '' : ', null: false'}"
+        end
+
+        def to_input_argument
+          "argument :#{@name}, #{@type_expr}, required: false"
         end
       end
     end

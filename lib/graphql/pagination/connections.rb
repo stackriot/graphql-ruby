@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 
 module GraphQL
   module Pagination
@@ -6,26 +8,27 @@ module GraphQL
     #
     # Attach as a plugin.
     #
-    # @example Adding a custom wrapper
-    #   class MySchema < GraphQL::Schema
-    #     connections.add(MyApp::SearchResults, MyApp::SearchResultsConnection)
-    #   end
+    # See [Schema.connections](rdoc-ref:Schema.connections)
     #
-    # @example Removing default connection support for arrays (they can still be manually wrapped)
-    #   class MySchema < GraphQL::Schema
-    #     connections.delete(Array)
-    #   end
+    # **Examples**
     #
-    # @see {Schema.connections}
+    # **Example: Adding a custom wrapper**
+    #
+    # ```ruby
+    # class MySchema < GraphQL::Schema
+    #   connections.add(MyApp::SearchResults, MyApp::SearchResultsConnection)
+    # end
+    # ```
+    #
+    # **Example: Removing default connection support for arrays (they can still be manually wrapped)**
+    #
+    # ```ruby
+    # class MySchema < GraphQL::Schema
+    #   connections.delete(Array)
+    # end
+    # ```
     class Connections
       class ImplementationMissingError < GraphQL::Error
-      end
-
-      def self.use(schema_defn)
-        if schema_defn.plugins.any? { |(plugin, args)| plugin == self }
-          GraphQL::Deprecation.warn("#{self} is now the default, remove `use #{self}` from #{caller(2,1).first}")
-        end
-        schema_defn.connections = self.new(schema: schema_defn)
       end
 
       def initialize(schema:)
@@ -53,7 +56,7 @@ module GraphQL
       end
 
       def wrapper_for(items, wrappers: all_wrappers)
-        impl = nil
+        impl = nil #: untyped
 
         items.class.ancestors.each { |cls|
           impl = wrappers[cls]
@@ -64,37 +67,66 @@ module GraphQL
       end
 
       # Used by the runtime to wrap values in connection wrappers.
-      # @api Private
-      def wrap(field, parent, items, arguments, context)
+      def wrap(field, parent, items, arguments, context) # :nodoc:
         return items if GraphQL::Execution::Interpreter::RawValue === items
         wrappers = context ? context.namespace(:connections)[:all_wrappers] : all_wrappers
         impl = wrapper_for(items, wrappers: wrappers)
 
-        if impl.nil?
+        if impl
+          impl.new(
+            items,
+            context: context,
+            parent: parent,
+            field: field,
+            max_page_size: field.has_max_page_size? ? field.max_page_size : context.schema.default_max_page_size,
+            default_page_size: field.has_default_page_size? ? field.default_page_size : context.schema.default_page_size,
+            first: arguments[:first],
+            after: arguments[:after],
+            last: arguments[:last],
+            before: arguments[:before],
+            arguments: arguments,
+            edge_class: edge_class_for_field(field),
+          )
+        else
           raise ImplementationMissingError, "Couldn't find a connection wrapper for #{items.class} during #{field.path} (#{items.inspect})"
         end
-
-        impl.new(
-          items,
-          context: context,
-          parent: parent,
-          field: field,
-          max_page_size: field.has_max_page_size? ? field.max_page_size : context.schema.default_max_page_size,
-          first: arguments[:first],
-          after: arguments[:after],
-          last: arguments[:last],
-          before: arguments[:before],
-          arguments: arguments,
-          edge_class: edge_class_for_field(field),
-        )
       end
 
+      def populate_connection(field, object, value, original_arguments, context)
+        if value.is_a? GraphQL::ExecutionError
+          raise value
+        elsif value.nil?
+          nil
+        elsif value.is_a?(GraphQL::Pagination::Connection)
+          # update the connection with some things that may not have been provided
+          value.context ||= context
+          value.parent ||= object
+          value.first_value ||= original_arguments[:first]
+          value.after_value ||= original_arguments[:after]
+          value.last_value ||= original_arguments[:last]
+          value.before_value ||= original_arguments[:before]
+          value.arguments ||= original_arguments # rubocop:disable Development/ContextIsPassedCop -- unrelated .arguments method
+          value.field ||= field
+          if field.has_max_page_size? && !value.has_max_page_size_override?
+            value.max_page_size = field.max_page_size
+          end
+          if field.has_default_page_size? && !value.has_default_page_size_override?
+            value.default_page_size = field.default_page_size
+          end
+          if (custom_t = context.schema.connections.edge_class_for_field(field))
+            value.edge_class = custom_t
+          end
+          value
+        else
+          context.namespace(:connections)[:all_wrappers] ||= context.schema.connections.all_wrappers
+          context.schema.connections.wrap(field, object, value, original_arguments, context)
+        end
+      end
       # use an override if there is one
-      # @api private
-      def edge_class_for_field(field)
+      def edge_class_for_field(field) # :nodoc:
         conn_type = field.type.unwrap
         conn_type_edge_type = conn_type.respond_to?(:edge_class) && conn_type.edge_class
-        if conn_type_edge_type && conn_type_edge_type != Relay::Edge
+        if conn_type_edge_type && conn_type_edge_type != Pagination::Connection::Edge
           conn_type_edge_type
         else
           nil
@@ -129,6 +161,11 @@ module GraphQL
         # Mongoid 7
         if defined?(Mongoid::Association::Referenced::HasMany::Targets::Enumerable)
           add(Mongoid::Association::Referenced::HasMany::Targets::Enumerable, Pagination::MongoidRelationConnection)
+        end
+
+        # Mongoid 7.3+
+        if defined?(Mongoid::Association::Referenced::HasMany::Enumerable)
+          add(Mongoid::Association::Referenced::HasMany::Enumerable, Pagination::MongoidRelationConnection)
         end
       end
     end

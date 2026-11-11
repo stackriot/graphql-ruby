@@ -50,7 +50,7 @@ describe GraphQL::Execution::Multiplex do
       ]
 
       res = multiplex(queries)
-      assert_equal expected_data, res
+      assert_graphql_equal expected_data, res
     end
 
     it "returns responses in the same order as their respective requests" do
@@ -105,16 +105,22 @@ describe GraphQL::Execution::Multiplex do
           "data"=>{"success"=>{"value"=>2}}
         },
         {
-          "data"=>{"runtimeError"=>nil},
           "errors"=>[{
             "message"=>"13 is unlucky",
             "locations"=>[{"line"=>1, "column"=>4}],
             "path"=>["runtimeError"]
-          }]
+          }],
+          "data"=>{"runtimeError"=>nil},
         },
         {
+          "errors"=>[
+            {
+              "message"=>"Cannot return null for non-nullable field LazySum.nestedSum",
+              "path"=>["invalidNestedNull", "nullableNestedSum", "nestedSum"],
+              "locations"=>[{"line"=>5, "column"=>11}],
+            },
+          ],
           "data"=>{"invalidNestedNull"=>{"value" => 2,"nullableNestedSum" => nil}},
-          "errors"=>[{"message"=>"Cannot return null for non-nullable field LazySum.nestedSum"}],
         },
         {
           "errors" => [{
@@ -132,7 +138,7 @@ describe GraphQL::Execution::Multiplex do
         {query: q3},
         {query: q4},
       ])
-      assert_equal expected_res, res.map(&:to_h)
+      assert_graphql_equal expected_res, res.map(&:to_h)
     end
   end
 
@@ -171,55 +177,71 @@ describe GraphQL::Execution::Multiplex do
     end
   end
 
-  describe "after_query when errors are raised" do
-    class InspectQueryInstrumentation
-      class << self
-        attr_reader :last_json
-        def before_query(query)
-        end
+  describe "execute_query when errors are raised" do
+    module InspectQueryInstrumentation
+      def execute_multiplex(multiplex:)
+        super
+      ensure
+        InspectQueryInstrumentation.last_json = multiplex.queries.first.result.to_json
+      end
 
-        def after_query(query)
-          @last_json = query.result.to_json
-        end
+      class << self
+        attr_accessor :last_json
       end
     end
 
     class InspectSchema < GraphQL::Schema
       class Query < GraphQL::Schema::Object
-        field :raise_execution_error, String, null: true
+        field :raise_execution_error, String, resolve_static: true
 
-        def raise_execution_error
+        def self.raise_execution_error(context)
           raise GraphQL::ExecutionError, "Whoops"
         end
 
-        field :raise_error, String, null: true
+        def raise_execution_error
+          self.class.raise_execution_error(context)
+        end
 
-        def raise_error
+        field :raise_error, String, resolve_static: true
+
+        def self.raise_error(context)
           raise GraphQL::Error, "Crash"
         end
 
-        field :raise_syntax_error, String, null: true
+        def raise_error
+          self.class.raise_error(context)
+        end
 
-        def raise_syntax_error
+        field :raise_syntax_error, String, resolve_static: true
+
+        def self.raise_syntax_error(context)
           raise SyntaxError
         end
 
-        field :raise_exception, String, null: true
+        def raise_syntax_error
+          self.class.raise_syntax_error(context)
+        end
+
+        field :raise_exception, String, resolve_static: true
+
+        def self.raise_exception(context)
+          raise Exception
+        end
 
         def raise_exception
-          raise Exception
+          self.class.raise_exception(context)
         end
       end
 
       query(Query)
-      instrument(:query, InspectQueryInstrumentation)
+      trace_with(InspectQueryInstrumentation)
     end
 
     unhandled_err_json = '{}'
 
     it "can access the query results" do
       InspectSchema.execute("{ raiseExecutionError }")
-      handled_err_json = '{"data":{"raiseExecutionError":null},"errors":[{"message":"Whoops","locations":[{"line":1,"column":3}],"path":["raiseExecutionError"]}]}'
+      handled_err_json = '{"errors":[{"message":"Whoops","locations":[{"line":1,"column":3}],"path":["raiseExecutionError"]}],"data":{"raiseExecutionError":null}}'
       assert_equal handled_err_json, InspectQueryInstrumentation.last_json
 
 
@@ -240,6 +262,45 @@ describe GraphQL::Execution::Multiplex do
         InspectSchema.execute("{ raiseException }")
       end
       assert_equal unhandled_err_json, InspectQueryInstrumentation.last_json
+    end
+  end
+
+  describe "context[:trace]" do
+    class MultiplexTraceSchema < GraphQL::Schema
+      class Query < GraphQL::Schema::Object
+        field :int, Integer, resolve_static: true
+        def self.int(context); 1; end
+
+        def int; 1; end
+      end
+
+      class Trace < GraphQL::Tracing::Trace
+        def execute_multiplex(multiplex:)
+          @execute_multiplex_count ||= 0
+          @execute_multiplex_count += 1
+          super
+        end
+
+        def execute_query(query:)
+          @execute_query_count ||= 0
+          @execute_query_count += 1
+          super
+        end
+
+        attr_reader :execute_multiplex_count, :execute_query_count
+      end
+
+      query(Query)
+    end
+
+    it "uses it instead of making a new trace" do
+      query_str = "{ int }"
+      trace_instance = MultiplexTraceSchema::Trace.new
+      res = MultiplexTraceSchema.multiplex([{query: query_str}, {query: query_str}], context: { trace: trace_instance })
+      assert_equal [1, 1], res.map { |r| r["data"]["int"]}
+
+      assert_equal 1, trace_instance.execute_multiplex_count
+      assert_equal 2, trace_instance.execute_query_count
     end
   end
 end

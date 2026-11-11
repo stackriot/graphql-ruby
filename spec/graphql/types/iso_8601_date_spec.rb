@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 require "spec_helper"
-require "graphql/types/iso_8601_date"
+
 describe GraphQL::Types::ISO8601Date do
   module DateTest
     class DateObject < GraphQL::Schema::Object
@@ -11,53 +11,158 @@ describe GraphQL::Types::ISO8601Date do
     end
 
     class Query < GraphQL::Schema::Object
-      field :parse_date, DateObject, null: true do
-        argument :date, GraphQL::Types::ISO8601Date, required: true
+      field :parse_date, DateObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601Date
       end
 
-      field :parse_date_time, DateObject, null: true do
-        argument :date, GraphQL::Types::ISO8601Date, required: true
+      field :parse_date_optional, DateObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601Date, required: false
       end
 
-      field :parse_date_string, DateObject, null: true do
-        argument :date, GraphQL::Types::ISO8601Date, required: true
+      field :parse_date_time, DateObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601Date
       end
 
-      field :parse_date_time_string, DateObject, null: true do
-        argument :date, GraphQL::Types::ISO8601Date, required: true
+      field :parse_date_string, DateObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601Date
       end
 
-      def parse_date(date:)
+      field :parse_date_time_string, DateObject, resolve_static: true do
+        argument :date, GraphQL::Types::ISO8601Date
+      end
+
+      field :serialize_date_default_argument, DateObject, resolve_static: true do
+        argument(
+          :date,
+          GraphQL::Types::ISO8601Date,
+          required: false,
+          default_value: Date.new(2018, 4, 5)
+          )
+      end
+
+      field :serialize_date_time_default_argument, DateObject, resolve_static: true do
+        argument(
+          :date,
+          GraphQL::Types::ISO8601Date,
+          required: false,
+          default_value: DateTime.new(2019, 6, 7, 10, 11, 12)
+          )
+      end
+
+      field :serialize_time_default_argument, DateObject, resolve_static: true do
+        argument(
+          :date,
+          GraphQL::Types::ISO8601Date,
+          required: false,
+          default_value: Time.new(2020, 8, 9, 10, 11, 12)
+          )
+      end
+
+      field :serialize_string_default_argument, DateObject, resolve_static: true do
+        argument(
+          :date,
+          GraphQL::Types::ISO8601Date,
+          required: false,
+          default_value: '1951-09-23'
+          )
+      end
+
+      def self.parse_date(context, date:)
         # Resolve a Date object
         Date.parse(date.iso8601)
       end
 
-      def parse_date_time(date:)
+      def parse_date(date:)
+        self.class.parse_date(context, date: date)
+      end
+
+      def self.parse_date_optional(context, date:)
+        return unless date
+
+        Date.parse(date.iso8601)
+      end
+
+      def parse_date_optional(date:)
+        self.class.parse_date_optional(context, date: date)
+      end
+
+      def self.parse_date_time(context, date:)
         # Resolve a DateTime object
         DateTime.parse(date.iso8601)
       end
 
-      def parse_date_string(date:)
+      def parse_date_time(date:)
+        self.class.parse_date_time(context, date: date)
+      end
+
+      def self.parse_date_string(context, date:)
         # Resolve a Date string
         Date.parse(date.iso8601).iso8601
       end
 
-      def parse_date_time_string(date:)
+      def parse_date_string(date:)
+        self.class.parse_date_string(context, date: date)
+      end
+
+      def self.parse_date_time_string(context, date:)
         # Resolve a DateTime string
         DateTime.parse(date.iso8601).iso8601
       end
-    end
 
+      def parse_date_time_string(date:)
+        self.class.parse_date_time_string(context, date: date)
+      end
+
+      def self.serialize_date_default_argument(context, date:)
+        date
+      end
+
+      def serialize_date_default_argument(date:)
+        self.class.serialize_date_default_argument(context, date: date)
+      end
+
+      def self.serialize_date_time_default_argument(context, date:)
+        date
+      end
+
+      def serialize_date_time_default_argument(date:)
+        self.class.serialize_date_time_default_argument(context, date: date)
+      end
+
+      def self.serialize_time_default_argument(context, date:)
+        date
+      end
+
+      def serialize_time_default_argument(date:)
+        self.class.serialize_time_default_argument(context, date: date)
+      end
+
+      def self.serialize_string_default_argument(context, date:)
+        date
+      end
+
+      def serialize_string_default_argument(date:)
+        self.class.serialize_string_default_argument(context, date: date)
+      end
+    end
 
     class Schema < GraphQL::Schema
       query(Query)
+
+      def self.type_error(err, ctx)
+        if ctx[:raise_type_error]
+          raise GraphQL::ExecutionError, "A type error was raised: #{err}"
+        else
+          super
+        end
+      end
     end
   end
 
 
   describe "as an input" do
 
-    def parse_date(date_str)
+    def parse_date(date_str, context: {})
       query_str = <<-GRAPHQL
       query($date: ISO8601Date!){
         parseDate(date: $date) {
@@ -67,7 +172,7 @@ describe GraphQL::Types::ISO8601Date do
         }
       }
       GRAPHQL
-      full_res = DateTest::Schema.execute(query_str, variables: { date: date_str })
+      full_res = DateTest::Schema.execute(query_str, context: context, variables: { date: date_str })
       full_res["errors"] || full_res["data"]["parseDate"]
     end
 
@@ -88,8 +193,9 @@ describe GraphQL::Types::ISO8601Date do
       assert_equal expected_errors, parse_date("xyz").map { |e| e["message"] }
       assert_equal expected_errors, parse_date(nil).map { |e| e["message"] }
       assert_equal expected_errors, parse_date([1, 2, 3]).map { |e| e["message"] }
+      assert_equal "A type error was raised: Date cannot be parsed: blah. \nDate must be able to be parsed as a Ruby Date object.", parse_date("blah", context: { raise_type_error: true })[0]["extensions"]["problems"][0]["explanation"].strip
+      assert_equal "Could not coerce value \"blah\" to ISO8601Date", parse_date("blah", context: { raise_type_error: false })[0]["extensions"]["problems"][0]["explanation"]
     end
-
 
     it "handles array inputs gracefully" do
       query_str = <<-GRAPHQL
@@ -103,6 +209,89 @@ describe GraphQL::Types::ISO8601Date do
       res = DateTest::Schema.execute(query_str)
       expected_message = "Argument 'date' on Field 'parseDate' has an invalid value ([\"A\", \"B\", \"C\"]). Expected type 'ISO8601Date!'."
       assert_equal expected_message, res["errors"].first["message"]
+    end
+
+    it "handles null gracefully" do
+      query_str = <<-GRAPHQL
+        {
+          parseDateOptional(date: null) {
+            year
+          }
+        }
+      GRAPHQL
+
+      res = DateTest::Schema.execute(query_str)
+      expected_res = {
+        "parseDateOptional" => nil
+      }
+      assert_equal(expected_res, res["data"])
+      assert_nil(res["errors"])
+
+      res = DateTest::Schema.execute(query_str, context: { raise_type_error: true })
+      expected_res = {
+        "parseDateOptional" => nil
+      }
+      assert_equal(expected_res, res["data"])
+      assert_nil(res["errors"])
+    end
+  end
+
+  describe "as an argument default value" do
+
+    it 'serializes a Date object as an ISO8601 Date string' do
+      query_str = <<-GRAPHQL
+      query {
+        serializeDateDefaultArgument {
+          iso8601
+        }
+      }
+      GRAPHQL
+      full_res = DateTest::Schema.execute(query_str)
+
+      date_str = "2018-04-05"
+      assert_equal date_str, full_res["data"]["serializeDateDefaultArgument"]["iso8601"]
+    end
+
+    it 'serializes a DateTime object as an ISO8601 Date string' do
+      query_str = <<-GRAPHQL
+      query {
+        serializeDateTimeDefaultArgument {
+          iso8601
+        }
+      }
+      GRAPHQL
+      full_res = DateTest::Schema.execute(query_str)
+
+      date_str = "2019-06-07"
+      assert_equal date_str, full_res["data"]["serializeDateTimeDefaultArgument"]["iso8601"]
+    end
+
+    it 'serializes a Time object as an ISO8601 Date string' do
+      query_str = <<-GRAPHQL
+      query {
+        serializeTimeDefaultArgument {
+          iso8601
+        }
+      }
+      GRAPHQL
+      full_res = DateTest::Schema.execute(query_str)
+
+      date_str = "2020-08-09"
+      assert_equal date_str, full_res["data"]["serializeTimeDefaultArgument"]["iso8601"]
+    end
+
+    it 'serializes a string object as an ISO8601 Date string' do
+      query_str = <<-GRAPHQL
+      query {
+        serializeStringDefaultArgument {
+          iso8601
+        }
+      }
+      GRAPHQL
+      full_res = DateTest::Schema.execute(query_str)
+
+      date_str = '1951-09-23'
+      assert_equal date_str, full_res["data"]["serializeStringDefaultArgument"]["iso8601"]
     end
   end
 
@@ -157,7 +346,7 @@ describe GraphQL::Types::ISO8601Date do
       GRAPHQL
 
       expected_res = { "name" => "ISO8601Date", "kind" => "SCALAR"}
-      assert_equal expected_res, introspection_res["data"]["__type"]
+      assert_graphql_equal expected_res, introspection_res["data"]["__type"]
     end
   end
 end

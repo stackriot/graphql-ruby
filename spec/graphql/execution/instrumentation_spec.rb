@@ -13,72 +13,72 @@ describe GraphQL::Schema do
       end
     end
 
-    class LogInstrumenter
-      def before_query(unit_of_work)
-        run_hook(unit_of_work, "begin")
-      end
+    module LogInstrumenter
+      def self.generate(context_key_sym)
+        hook_method = :"#{context_key_sym}_run_hook"
+        mod = Module.new
 
-      def after_query(unit_of_work)
-        run_hook(unit_of_work, "end")
-      end
-
-      alias :before_multiplex :before_query
-      alias :after_multiplex :after_query
-
-      private
-
-      def run_hook(unit_of_work, event_name)
-        unit_of_work.context[log_key(event_name)] = true
-        if unit_of_work.context[raise_key(event_name)]
-          raise InstrumenterError.new(log_key(event_name))
+        mod.define_method(:execute_query) do |query:, &block|
+          public_send(hook_method, query, "begin")
+          result = nil
+          begin
+            result = super(query: query, &block)
+          ensure
+            public_send(hook_method, query, "end")
+          end
+          result
         end
-      end
 
-      def log_key(event_name)
-        context_key("did_#{event_name}")
-      end
+        mod.define_method(:execute_multiplex) do |multiplex:, &block|
+          public_send(hook_method, multiplex, "begin")
+          result = nil
+          begin
+            result = super(multiplex: multiplex, &block)
+          ensure
+            public_send(hook_method, multiplex, "end")
+          end
+          result
+        end
 
-      def raise_key(event_name)
-        context_key("should_raise_#{event_name}")
-      end
+        mod.define_method(hook_method) do |unit_of_work, event_name|
+          log_key = :"#{context_key_sym}_did_#{event_name}"
+          error_key = :"#{context_key_sym}_should_raise_#{event_name}"
+          unit_of_work.context[log_key] = true
+          if unit_of_work.context[error_key]
+            raise InstrumenterError.new(log_key)
+          end
+        end
 
-      def context_key(suffix)
-        prefix = self.class.name.sub("Instrumenter", "").downcase
-        :"#{prefix}_instrumenter_#{suffix}"
+        mod
       end
     end
 
-    class FirstInstrumenter < LogInstrumenter; end
-    class SecondInstrumenter < LogInstrumenter; end
-
-    class ExecutionErrorInstrumenter
-      def before_query(query)
+    module ExecutionErrorTrace
+      def execute_query(query:)
         if query.context[:raise_execution_error]
-          raise GraphQL::ExecutionError, "Raised from instrumenter before_query"
+          raise GraphQL::ExecutionError, "Raised from trace execute_query"
         end
-      end
-
-      def after_query(query)
+        super
       end
     end
 
     # This is how you might add queries from a persisted query backend
 
-    class QueryStringInstrumenter
-      def before_query(query)
-        if query.context[:extra_query_string] && query.query_string.nil?
-          query.query_string = query.context[:extra_query_string]
+    module QueryStringTrace
+      def execute_multiplex(multiplex:)
+        multiplex.queries.each do |query|
+          if query.context[:extra_query_string] && query.query_string.nil?
+            query.query_string = query.context[:extra_query_string]
+          end
         end
-      end
-
-      def after_query(query)
+        super
       end
     end
 
     let(:query_type) {
       Class.new(GraphQL::Schema::Object) do
         graphql_name "Query"
-        field :int, Integer, null: true do
+        field :int, Integer do
           argument :value, Integer, required: false
         end
 
@@ -92,10 +92,10 @@ describe GraphQL::Schema do
       spec = self
       Class.new(GraphQL::Schema) do
         query(spec.query_type)
-        instrument(:query, FirstInstrumenter.new)
-        instrument(:query, SecondInstrumenter.new)
-        instrument(:query, ExecutionErrorInstrumenter.new)
-        instrument(:query, QueryStringInstrumenter.new)
+        trace_with(LogInstrumenter.generate(:second_instrumenter))
+        trace_with(LogInstrumenter.generate(:first_instrumenter))
+        trace_with(ExecutionErrorTrace)
+        trace_with(QueryStringTrace)
       end
     }
 
@@ -125,11 +125,22 @@ describe GraphQL::Schema do
         assert context[:second_instrumenter_did_end]
       end
 
-      it "rescues execution errors from before_query" do
+      it "rescues execution errors from execute_query" do
         context = {raise_execution_error: true}
         res = schema.execute(" { int(value: 2) } ", context: context)
-        assert_equal "Raised from instrumenter before_query", res["errors"].first["message"]
-        refute res.key?("data"), "The query doesn't run"
+
+        assert_equal({
+          "data" => nil,
+          "errors" => [
+            {
+              "message" => "Raised from trace execute_query",
+              **if_exec_next({
+                "locations" => [{"line" => 1, "column" => 2}],
+                "path" => [],
+              }, {})
+            },
+          ]
+        }, res.to_h)
       end
 
       it "can assign a query string there" do
@@ -141,9 +152,9 @@ describe GraphQL::Schema do
 
     describe "within a multiplex" do
       let(:multiplex_schema) {
-        schema.redefine {
-          instrument(:multiplex, FirstInstrumenter.new)
-          instrument(:multiplex, SecondInstrumenter.new)
+        Class.new(schema) {
+          trace_with(LogInstrumenter.generate(:second_instrumenter))
+          trace_with(LogInstrumenter.generate(:first_instrumenter))
         }
       }
 
@@ -166,8 +177,9 @@ describe GraphQL::Schema do
         assert multiplex_ctx[:second_instrumenter_did_begin]
         refute multiplex_ctx[:second_instrumenter_did_end]
         # No query instrumentation was run at all
-        assert_equal 0, query_1_ctx.size
-        assert_equal 0, query_2_ctx.size
+        expected_ctx_size = GraphQL::Schema.use_visibility_profile? ? 1 : 0
+        assert_equal expected_ctx_size, query_1_ctx.size
+        assert_equal expected_ctx_size, query_2_ctx.size
       end
 
       it "does full and partial query runs" do

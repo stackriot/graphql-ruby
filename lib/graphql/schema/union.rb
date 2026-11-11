@@ -1,8 +1,9 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   class Schema
     class Union < GraphQL::Schema::Member
-      extend GraphQL::Schema::Member::AcceptsDefinition
       extend GraphQL::Schema::Member::HasUnresolvedTypeError
 
       class << self
@@ -11,16 +12,17 @@ module GraphQL
           super
         end
 
-        def possible_types(*types, context: GraphQL::Query::NullContext, **options)
-          if types.any?
+        def possible_types(*types, context: GraphQL::Query::NullContext.instance, **options)
+          if !types.empty?
             types.each do |t|
               assert_valid_union_member(t)
               type_memberships << type_membership_class.new(self, t, **options)
             end
           else
             visible_types = []
+            warden = Warden.from_context(context)
             type_memberships.each do |type_membership|
-              if type_membership.visible?(context)
+              if warden.visible_type_membership?(type_membership, context)
                 visible_types << type_membership.object_type
               end
             end
@@ -28,17 +30,8 @@ module GraphQL
           end
         end
 
-        def to_graphql
-          type_defn = GraphQL::UnionType.new
-          type_defn.name = graphql_name
-          type_defn.description = description
-          type_defn.ast_node = ast_node
-          type_defn.type_memberships = type_memberships
-          if respond_to?(:resolve_type)
-            type_defn.resolve_type = method(:resolve_type)
-          end
-          type_defn.metadata[:type_class] = self
-          type_defn
+        def all_possible_types
+          type_memberships.map(&:object_type)
         end
 
         def type_membership_class(membership_class = nil)
@@ -60,8 +53,7 @@ module GraphQL
         # Update a type membership whose `.object_type` is a string or late-bound type
         # so that the type membership's `.object_type` is the given `object_type`.
         # (This is used for updating the union after the schema as lazily loaded the union member.)
-        # @api private
-        def assign_type_membership_object_type(object_type)
+        def assign_type_membership_object_type(object_type) # :nodoc:
           assert_valid_union_member(object_type)
           type_memberships.each { |tm|
             possible_type = tm.object_type
@@ -79,9 +71,20 @@ module GraphQL
         private
 
         def assert_valid_union_member(type_defn)
-          if type_defn.is_a?(Module) && !type_defn.is_a?(Class)
+          case type_defn
+          when Class
+            type_defn = type_defn #: as GraphQL::Schema::Member::type_definition
+            if !type_defn.kind.object?
+              raise ArgumentError, "Union possible_types can only be object types (not #{type_defn.kind.name}, #{type_defn.inspect})"
+            end
+          when Module
             # it's an interface type, defined as a module
+            type_defn = type_defn #: as GraphQL::Schema::Member::type_definition
             raise ArgumentError, "Union possible_types can only be object types (not interface types), remove #{type_defn.graphql_name} (#{type_defn.inspect})"
+          when String, GraphQL::Schema::LateBoundType
+            # Ok - assume it will get checked later
+          else
+            raise ArgumentError, "Union possible_types can only be class-based GraphQL types (not #{type_defn.inspect} (#{type_defn.class.name}))."
           end
         end
       end

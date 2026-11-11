@@ -1,14 +1,4 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: GraphQL Pro - Defer
-title: Usage
-desc: Using @defer on the client side
-index: 2
-pro: true
----
-
+# Usage
 
 `@defer` is a [GraphQL directive](https://graphql.org/learn/queries/#directives) which instructs the server to execute the field in a special way:
 
@@ -24,13 +14,12 @@ query GetPlayerInfo($handle: String!){
 
 The directives `@skip` and `@include` are built into any GraphQL server and client, but `@defer` requires special attention.
 
-Apollo-Client has [experimental support](https://www.apollographql.com/docs/react/features/defer-support.html)
-but it may [have some issues](https://github.com/apollographql/apollo-client/issues/4484), so you can try [this updated fork](https://github.com/rmosolgo/apollo-client) while they're worked out.
+Apollo-Client [currently supports the @defer directive](https://www.apollographql.com/docs/react/data/defer/).
 
 `@defer` also accepts a `label:` option which will be included in outgoing patches when it's present in the query (eg, `@defer(label: "patch1")`).
 
-Want to use `@defer` with another client? Please {% open_an_issue "Client support for @defer with ..." %} or email `support@graphql.pro` and we'll dig in!
+Want to use `@defer` with another client? Please [open an issue](https://github.com/rmosolgo/graphql-ruby/issues/new?title=Client+support+for+%40defer+with+...&body=) or email `support@graphql.pro` and we'll dig in!
 
 ## Next Steps
 
-{% internal_link "Set up your server", "/defer/setup" %} to support `@defer`.
+[Set up your server](/defer/setup) to support `@defer`.

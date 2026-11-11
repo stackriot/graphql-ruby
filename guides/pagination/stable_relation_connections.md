@@ -1,23 +1,12 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Pagination
-title: Stable Relation Connections
-desc: Advanced pagination for ActiveRecord
-index: 4
-pro: true
----
+# Stable Relation Connections
 
 `GraphQL::Pro` includes a mechanism for serving _stable_ connections for `ActiveRecord::Relation`s based on column values. If objects are created or destroyed during pagination, the list of items won't be disrupted.
 
 These connection implementations are database-specific so that they can build proper queries with regard to `NULL` handling. (Postgres treats nulls as _larger_ than other values while MySQL and SQLite treat them as _smaller_ than other values.)
 
-__Note:__ In GraphQL-Pro 1.12.x, the {% internal_link "previous stable connection implementation", "/pro/cursors" %} is still enabled by default. See [Opting Out](/pro/cursors#opting-out) to disable that feature, then enable this new one.
-
 ## What's the difference?
 
-The default {{ "GraphQL::Pagination::ActiveRecordRelationConnection" | api_doc }} (which turns an `ActiveRecord::Relation` into a GraphQL-ready connection) uses _offset_ as a cursor. This naive approach is sufficient for many cases, but it's subject to a specific set of bugs.
+The default [GraphQL::Pagination::ActiveRecordRelationConnection](rdoc-ref:GraphQL::Pagination::ActiveRecordRelationConnection) (which turns an `ActiveRecord::Relation` into a GraphQL-ready connection) uses _offset_ as a cursor. This naive approach is sufficient for many cases, but it's subject to a specific set of bugs.
 
 Let's say you're looking at the second page of 10 items (`LIMIT 10 OFFSET 10`). During that time, one of the items on page 1 is deleted. When you navigate to page 3 (`LIMIT 10 OFFSET 20`), you'll actually _miss_ one item. The entire list shifted "up" one position when a previous item was deleted.
 

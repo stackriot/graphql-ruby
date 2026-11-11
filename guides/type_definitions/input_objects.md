@@ -1,12 +1,4 @@
----
-layout: guide
-doc_stub: false
-search: true
-section: Type Definitions
-title: Input Objects
-desc: Input objects are sets of key-value pairs which can be used as field arguments.
-index: 3
----
+# Input Objects
 
 Input object types are complex inputs for GraphQL operations. They're great for fields that need a lot of structured input, like mutations or search fields. In a GraphQL request, it might look like this:
 
@@ -18,7 +10,7 @@ mutation {
 }
 ```
 
-Like a Ruby `Hash`, an input object consists of keys and values. Unlike a Hash, its keys and value types must be defined statically, as part of the GraphQL system. For example, here's an input object, expressed in the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#type-language) (SDL):
+Like a Ruby `Hash`, an input object consists of keys and values. Unlike a Hash, its keys and value types must be defined statically, as part of the GraphQL system. For example, here's an input object, expressed in the [GraphQL Schema Definition Language](https://graphql.org/learn/schema/#input-object-types) (SDL):
 
 ```ruby
 input PostAttributes {
@@ -36,7 +28,7 @@ This input object has three possible keys:
 
 ## Defining Input Object Types
 
-Input object types extend {{ "GraphQL::Schema::InputObject" | api_doc }} and define key-value pairs with the `argument(...)` method. For example:
+Input object types extend [GraphQL::Schema::InputObject](rdoc-ref:GraphQL::Schema::InputObject) and define key-value pairs with the `argument(...)` method. For example:
 
 ```ruby
 # app/graphql/types/base_input_object.rb
@@ -46,13 +38,13 @@ end
 
 class Types::PostAttributes < Types::BaseInputObject
   description "Attributes for creating or updating a blog post"
-  argument :title, String, "Header for the post", required: true
-  argument :full_text, String, "Full body of the post", required: true
+  argument :title, String, "Header for the post"
+  argument :full_text, String, "Full body of the post"
   argument :categories, [Types::PostCategory], required: false
 end
 ```
 
-For a full description of the `argument(...)` method, see the {% internal_link "argument section of the Objects guide","/type_definitions/objects#field-arguments" %}.
+For a full description of the `argument(...)` method, see the [argument section of the Objects guide](/fields/arguments.html).
 
 ## Using Input Objects
 
@@ -62,45 +54,47 @@ Input objects are passed to field methods as an instance of their definition cla
 - calling `#[]` with the _camel-cased_ name of the argument (this is for compatibility with previous GraphQL-Ruby versions)
 
 ```ruby
-# This field takes an argument called `attributes`
-# which will be an instance of `PostAttributes`
-field :create_post, Types::Post, null: false do
-  argument :attributes, Types::PostAttributes, required: true
-end
+class Types::MutationType < GraphQL::Schema::Object
+  # This field takes an argument called `attributes`
+  # which will be an instance of `PostAttributes`
+  field :create_post, Types::Post, null: false do
+    argument :attributes, Types::PostAttributes
+  end
 
-def create_post(attributes:)
-  puts attributes.class.name
-  # => "Types::PostAttributes"
-  # Access a value by method (underscore-cased):
-  puts attributes.full_text
-  # => "This is my first post"
-  # Or by hash-style lookup (camel-cased, for compatibility):
-  puts attributes[:fullText]
-  # => "This is my first post"
+  def create_post(attributes:)
+    puts attributes.class.name
+    # => "Types::PostAttributes"
+    # Access a value by method (underscore-cased):
+    puts attributes.full_text
+    # => "This is my first post"
+    # Or by hash-style lookup (camel-cased, for compatibility):
+    puts attributes[:fullText]
+    # => "This is my first post"
+  end
 end
 ```
 
 ## Customizing Input Objects
 
-You can customize the `GraphQL::Schema::Argument` class which is used for input objects: 
+You can customize the `GraphQL::Schema::Argument` class which is used for input objects:
 
-```ruby 
-class Types::BaseArgument < GraphQL::Schema::Argument 
-  # your customization here ... 
-end 
+```ruby
+class Types::BaseArgument < GraphQL::Schema::Argument
+  # your customization here ...
+end
 
 
-class Types::BaseInputObject < GraphQL::Schema::InputObject 
-  # Hook up the customized argument class 
-  argument_class(Types::BaseArgument)  
-end 
+class Types::BaseInputObject < GraphQL::Schema::InputObject
+  # Hook up the customized argument class
+  argument_class(Types::BaseArgument)
+end
 ```
 
 
 You can also add or override methods on input object classes to customize them.  They have two instance variables by default:
 
-- `@arguments`: A {{ "GraphQL::Query::Arguments" | api_doc }} instance
-- `@context`: The current {{ "GraphQL::Query::Context" | api_doc }}
+- `@arguments`: A [GraphQL::Execution::Interpreter::Arguments](rdoc-ref:GraphQL::Execution::Interpreter::Arguments) instance
+- `@context`: The current [GraphQL::Query::Context](rdoc-ref:GraphQL::Query::Context)
 
 Any extra methods you define on the class can be used for field resolution, as demonstrated above.
 
@@ -111,8 +105,8 @@ Your input objects can be automatically converted to other Ruby types before the
 ```ruby
 class Types::DateRangeInput < Types::BaseInputObject
   description "Range of dates"
-  argument :min, Types::Date, "Minimum value of the range", required: true
-  argument :max, Types::Date, "Maximum value of the range", required: true
+  argument :min, Types::Date, "Minimum value of the range"
+  argument :max, Types::Date, "Maximum value of the range"
 
   def prepare
     min..max
@@ -121,7 +115,7 @@ end
 
 class Types::CalendarType < Types::BaseObject
   field :appointments, [Types::Appointment], "Appointments on your calendar", null: false do
-    argument :during, Types::DateRangeInput, "Only show appointments within this range", required: true
+    argument :during, Types::DateRangeInput, "Only show appointments within this range"
   end
 
   def appointments(during:)
@@ -130,3 +124,23 @@ class Types::CalendarType < Types::BaseObject
   end
 end
 ```
+
+## `@oneOf`
+
+You can make input objects that require _exactly one_ field to be provided using `one_of`:
+
+```ruby
+class FindUserInput < Types::BaseInput
+  one_of
+  # Either `{ id: ... }` or `{ username: ... }` may be given,
+  # but not both -- and one of them _must_ be given.
+  argument :id, ID, required: false
+  argument :username, String, required: false
+end
+```
+
+An input object with `one_of` will require exactly one given argument and it will require that the given argument's value is not `nil`. With `one_of`, arguments must have `required: false`, since any _individual_ argument is not required.
+
+When you use `one_of`, it will appear in schema print-outs with `input ... @oneOf` and you can query it using `{ __type(name: $typename) { isOneOf } }`.
+
+This behavior was adopted to the September 2025 GraphQL specification.

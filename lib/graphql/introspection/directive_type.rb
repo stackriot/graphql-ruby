@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module Introspection
     class DirectiveType < Introspection::BaseObject
@@ -10,19 +12,27 @@ module GraphQL
                   "skipping a field. Directives provide this by describing additional information "\
                     "to the executor."
       field :name, String, null: false, method: :graphql_name
-      field :description, String, null: true
-      field :locations, [GraphQL::Schema::LateBoundType.new("__DirectiveLocation")], null: false
-      field :args, [GraphQL::Schema::LateBoundType.new("__InputValue")], null: false do
+      field :description, String
+      field :locations, [GraphQL::Schema::LateBoundType.new("__DirectiveLocation")], null: false, scope: false
+      field :args, [GraphQL::Schema::LateBoundType.new("__InputValue")], null: false, scope: false, resolve_each: :resolve_args do
         argument :include_deprecated, Boolean, required: false, default_value: false
       end
       field :on_operation, Boolean, null: false, deprecation_reason: "Use `locations`.", method: :on_operation?
       field :on_fragment, Boolean, null: false, deprecation_reason: "Use `locations`.", method: :on_fragment?
       field :on_field, Boolean, null: false, deprecation_reason: "Use `locations`.", method: :on_field?
 
-      def args(include_deprecated:)
-        args = @context.warden.arguments(@object)
+      field :is_repeatable, Boolean, method: :repeatable?
+
+      #: (singleton(GraphQL::Schema::Directive) object, GraphQL::Query::Context context, include_deprecated: bool) -> Array[GraphQL::Schema::Argument]
+      def self.resolve_args(object, context, include_deprecated:)
+        args = context.types.arguments(object)
         args = args.reject(&:deprecation_reason) unless include_deprecated
         args
+      end
+
+      #: (include_deprecated: bool) -> Array[GraphQL::Schema::Argument]
+      def args(include_deprecated:)
+        self.class.resolve_args(object, context, include_deprecated: include_deprecated)
       end
     end
   end

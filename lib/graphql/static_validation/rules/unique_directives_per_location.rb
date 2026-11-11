@@ -1,6 +1,10 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module StaticValidation
+    #--
+    # @requires_ancestor: GraphQL::StaticValidation::BaseVisitor
     module UniqueDirectivesPerLocation
       DIRECTIVE_NODE_HOOKS = [
         :on_fragment_definition,
@@ -17,30 +21,41 @@ module GraphQL
         :on_enum_value_definition,
         :on_input_object_type_definition,
         :on_field,
-      ]
+      ] #: Array[Symbol]
 
-      DIRECTIVE_NODE_HOOKS.each do |method_name|
-        define_method(method_name) do |node, parent|
-          if node.directives.any?
+      VALIDATE_DIRECTIVE_LOCATION_ON_NODE = <<~RUBY
+        def %{method_name}(node, parent)
+          if !node.directives.empty?
             validate_directive_location(node)
           end
           super(node, parent)
         end
+      RUBY
+      DIRECTIVE_NODE_HOOKS.each do |method_name|
+        # Can't use `define_method {...}` here  because the proc can't be isolated for use in non-main Ractors
+        module_eval(VALIDATE_DIRECTIVE_LOCATION_ON_NODE % { method_name: method_name }) # rubocop:disable Development/NoEvalCop
       end
 
       private
 
+      #: (GraphQL::Language::Nodes::FragmentDefinition | GraphQL::Language::Nodes::FragmentSpread | GraphQL::Language::Nodes::InlineFragment | GraphQL::Language::Nodes::OperationDefinition | GraphQL::Language::Nodes::ScalarTypeDefinition | GraphQL::Language::Nodes::ObjectTypeDefinition | GraphQL::Language::Nodes::InputValueDefinition | GraphQL::Language::Nodes::FieldDefinition | GraphQL::Language::Nodes::InterfaceTypeDefinition | GraphQL::Language::Nodes::UnionTypeDefinition | GraphQL::Language::Nodes::EnumTypeDefinition | GraphQL::Language::Nodes::EnumValueDefinition | GraphQL::Language::Nodes::InputObjectTypeDefinition | GraphQL::Language::Nodes::Field node) -> void
       def validate_directive_location(node)
-        used_directives = {}
+        used_directives = {} #: Hash[String, GraphQL::Language::Nodes::Directive]
         node.directives.each do |ast_directive|
           directive_name = ast_directive.name
-          if used_directives[directive_name]
-            add_error(GraphQL::StaticValidation::UniqueDirectivesPerLocationError.new(
-              "The directive \"#{directive_name}\" can only be used once at this location.",
-              nodes: [used_directives[directive_name], ast_directive],
-              directive: directive_name,
-            ))
-          else
+          if (first_node = used_directives[directive_name])
+            @directives_are_unique_errors_by_first_node ||= {} #: Hash[GraphQL::Language::Nodes::Directive, GraphQL::StaticValidation::UniqueDirectivesPerLocationError]?
+            err = @directives_are_unique_errors_by_first_node[first_node] ||= begin
+              error = GraphQL::StaticValidation::UniqueDirectivesPerLocationError.new(
+                "The directive \"#{directive_name}\" can only be used once at this location.",
+                nodes: [first_node],
+                directive: directive_name,
+              )
+              add_error(error)
+              error
+            end
+            err.nodes << ast_directive
+          elsif !((dir_defn = context.schema_directives[directive_name]) && dir_defn.repeatable?)
             used_directives[directive_name] = ast_directive
           end
         end

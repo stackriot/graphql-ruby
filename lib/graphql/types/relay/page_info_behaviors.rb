@@ -1,11 +1,13 @@
 # frozen_string_literal: true
+#--
+# typed: strict
 module GraphQL
   module Types
     module Relay
       module PageInfoBehaviors
+        #: (singleton(GraphQL::Schema::Object) child_class) -> void
         def self.included(child_class)
-          child_class.extend GraphQL::Types::Relay::DefaultRelay
-
+          child_class.extend ClassMethods
           child_class.description "Information about pagination in a connection."
           child_class.field :has_next_page, Boolean, null: false,
             description: "When paginating forwards, are there more items?"
@@ -18,6 +20,18 @@ module GraphQL
 
           child_class.field :end_cursor, String, null: true,
             description: "When paginating forwards, the cursor to continue."
+        end
+      end
+
+      module ClassMethods
+        #: () -> bool
+        def default_relay?
+          true
+        end
+
+        #: () -> bool
+        def default_broadcastable?
+          true
         end
       end
     end

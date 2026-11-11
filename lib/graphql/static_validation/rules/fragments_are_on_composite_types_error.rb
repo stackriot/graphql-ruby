@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+#--
+# typed: true
 module GraphQL
   module StaticValidation
     class FragmentsAreOnCompositeTypesError < StaticValidation::Error
